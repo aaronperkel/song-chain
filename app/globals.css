@@ -1,26 +1,88 @@
 @import "tailwindcss";
 
+/**
+ * Road signage, at dusk.
+ *
+ * The palette comes from a car at night: petrol-dark sky, sodium streetlight,
+ * road paint, the green of the verge, a brake light. Each colour has one job,
+ * so nothing is decoration.
+ *
+ * This is a dark interface on purpose. The game is played on a long drive,
+ * often after dark, where a white screen is genuinely unpleasant for
+ * everyone else in the car.
+ */
+@theme {
+  --color-dusk: #10202b;
+  --color-dusk-raised: #17303e;
+  --color-dusk-line: #26495c;
+  --color-paint: #f2efe6;
+  --color-paint-dim: #a8b6bd;
+  --color-sodium: #f0a83c;
+  --color-verge: #6e8c7e;
+  --color-brake: #be4230;
+
+  --font-display: var(--font-barlow-condensed), "Arial Narrow", sans-serif;
+  --font-sans: var(--font-barlow), system-ui, sans-serif;
+
+  /* Signage scale: a few sizes, far apart, so hierarchy reads at a glance. */
+  --text-shout: 3.25rem;
+  --text-shout--line-height: 0.92;
+  --text-shout--letter-spacing: -0.01em;
+  --text-call: 2rem;
+  --text-call--line-height: 1;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-dusk);
+  color: var(--color-paint);
+  font-family: var(--font-sans);
+  /* Never bounce: a rubber-band scroll in a moving car feels like a fault. */
+  overscroll-behavior-y: none;
+}
+
+/* Tap targets stay thumb-sized everywhere, not just where it was convenient. */
+button,
+a[role="button"],
+input,
+select {
+  min-height: 3rem;
+}
+
+/* Keyboard focus has to survive a dark palette. */
+:focus-visible {
+  outline: 2px solid var(--color-sodium);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/**
+ * The turn handover is the one piece of motion in the app: it answers an
+ * event the player did not cause, so it has to announce itself.
+ */
+@keyframes turn-arrives {
+  from {
+    background-color: var(--color-sodium);
+    color: var(--color-dusk);
+  }
+  to {
+    background-color: transparent;
+    color: var(--color-paint);
+  }
+}
+
+.turn-arrives {
+  animation: turn-arrives 1.1s ease-out 1;
 }

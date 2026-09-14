@@ -1,31 +1,13 @@
 import type pg from 'pg'
-import type { ChainEntry, MatchedOn, Track, Via } from '@/lib/rules'
+import type { MatchedOn, Via } from '@/lib/rules'
 import type { AppTrack } from '@/lib/spotify'
 import { query, queryOne, transaction } from '@/lib/db'
+import { toRulesHistory, toRulesTrack, type StoredEntry } from './entry'
 import { advanceTurn, type TurnState } from './turns'
 
-/**
- * The chain, as stored.
- *
- * Rows hold a snapshot of the track rather than just an id: a remaster can
- * replace a title on Spotify, but the chain has to keep saying what was
- * actually played and which word actually linked it.
- */
-export type StoredEntry = {
-  id: string
-  position: number
-  track: AppTrack
-  matchedWord: string | null
-  matchedOn: MatchedOn | null
-  via: Via | null
-  seatId: string | null
-  seatName: string | null
-  isSeed: boolean
-  wasOverride: boolean
-  queuedToSpotify: boolean
-  playedAt: string | null
-  createdAt: string
-}
+// Re-exported so server callers keep one import for the chain.
+export { toRulesHistory, toRulesTrack }
+export type { StoredEntry }
 
 type EntryRow = {
   id: string
@@ -81,25 +63,6 @@ function toStoredEntry(row: EntryRow): StoredEntry {
     playedAt: row.played_at === null ? null : row.played_at.toISOString(),
     createdAt: row.created_at.toISOString(),
   }
-}
-
-/** The rules engine only wants the fields it declares. */
-export function toRulesTrack(track: AppTrack): Track {
-  return {
-    id: track.id,
-    title: track.title,
-    artists: track.artists,
-    durationMs: track.durationMs,
-  }
-}
-
-export function toRulesHistory(entries: readonly StoredEntry[]): ChainEntry[] {
-  return entries.map((entry) => ({
-    track: toRulesTrack(entry.track),
-    matchedWord: entry.matchedWord,
-    matchedOn: entry.matchedOn,
-    via: entry.via,
-  }))
 }
 
 export async function listChain(roomId: string): Promise<StoredEntry[]> {
