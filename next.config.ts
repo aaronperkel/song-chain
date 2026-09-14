@@ -11,7 +11,16 @@ const nextConfig: NextConfig = {
    *
    * Development only; it has no effect on a deployed build.
    */
-  allowedDevOrigins: ["127.0.0.1"],
+  allowedDevOrigins: [
+    // Spotify requires the loopback IP for redirect URIs (see above).
+    "127.0.0.1",
+    // Testing with real phones means serving the dev build over the LAN, and
+    // the same block applies to any origin that is not the one the dev server
+    // booted on. Private ranges only, and development only.
+    "192.168.1.184",
+    "192.168.*.*",
+    "10.*.*.*",
+  ],
 
   images: {
     remotePatterns: [
