@@ -99,10 +99,11 @@ export function isSealed(value: string): boolean {
 }
 
 /**
- * A room's host token is a bearer secret handed to one browser. Only its hash
- * is stored, so the database never holds anything that grants host control.
+ * A bearer secret handed to one browser -- host control of a room, or a seat
+ * at the table. Only its hash is stored, so the database never holds anything
+ * that grants either.
  */
-export function newHostSecret(): string {
+export function newSecret(): string {
   return randomBytes(32).toString('base64url')
 }
 

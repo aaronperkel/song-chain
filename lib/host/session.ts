@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers'
-import { hashSecret, newHostSecret, secretMatches } from '@/lib/crypto/seal'
+import { hashSecret, newSecret, secretMatches } from '@/lib/crypto/seal'
 import { findHostSecretHash } from '@/lib/rooms/repo'
 
 /**
@@ -33,7 +33,7 @@ function decode(raw: string): HostCookie | null {
 
 /** Issue a host secret for a room, returning the hash to store. */
 export function newHostCredentials(): { secret: string; hash: string } {
-  const secret = newHostSecret()
+  const secret = newSecret()
   return { secret, hash: hashSecret(secret) }
 }
 

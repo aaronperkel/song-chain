@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { randomBytes } from 'node:crypto'
-import { hashSecret, isSealed, newHostSecret, open, seal, secretMatches, SealError } from './seal'
+import { hashSecret, isSealed, newSecret, open, seal, secretMatches, SealError } from './seal'
 
 const KEY = randomBytes(32).toString('base64')
 
@@ -93,15 +93,15 @@ describe('seal and open', () => {
 
 describe('host secrets', () => {
   it('stores only a hash', () => {
-    const secret = newHostSecret()
+    const secret = newSecret()
     const stored = hashSecret(secret)
     expect(stored).not.toContain(secret)
     expect(secretMatches(secret, stored)).toBe(true)
   })
 
   it('rejects a wrong secret', () => {
-    const stored = hashSecret(newHostSecret())
-    expect(secretMatches(newHostSecret(), stored)).toBe(false)
+    const stored = hashSecret(newSecret())
+    expect(secretMatches(newSecret(), stored)).toBe(false)
   })
 
   it('rejects a differently-sized candidate without throwing', () => {
@@ -109,8 +109,8 @@ describe('host secrets', () => {
   })
 
   it('generates unguessable secrets', () => {
-    const secrets = new Set(Array.from({ length: 50 }, () => newHostSecret()))
+    const secrets = new Set(Array.from({ length: 50 }, () => newSecret()))
     expect(secrets.size).toBe(50)
-    expect(newHostSecret().length).toBeGreaterThanOrEqual(43)
+    expect(newSecret().length).toBeGreaterThanOrEqual(43)
   })
 })
