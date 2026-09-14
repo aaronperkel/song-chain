@@ -164,7 +164,12 @@ export function HostView({
           />
 
           <div className="pt-4">
-            <ChainExport chain={state.chain} code={state.room.code} />
+            <ChainExport
+              chain={state.chain}
+              code={state.room.code}
+              roomId={state.room.id}
+              hostConnected={state.room.hostConnected}
+            />
           </div>
         </section>
 

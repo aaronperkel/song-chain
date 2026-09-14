@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { appOrigin } from '@/lib/api/origin'
 import { currentHostRoomId } from '@/lib/host/session'
 import { STATE_COOKIE, VERIFIER_COOKIE, pkceCookieOptions } from '@/lib/host/pkce-cookies'
-import { authorizeUrl, createPkcePair, createState } from '@/lib/spotify'
+import { authorizeUrl, createPkcePair, createState, PLAYLIST_SCOPE } from '@/lib/spotify'
 import { spotifyCredentials } from '@/lib/spotify'
 
 /**
@@ -34,6 +34,15 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   const origin = appOrigin(request)
+
+  /**
+   * Incremental consent. The first login asks only for what playback needs;
+   * write access to somebody's library is requested later, and only if they
+   * ask for a playlist. Asking for everything up front is how a consent
+   * screen gets declined wholesale.
+   */
+  const wantsPlaylist = new URL(request.url).searchParams.get('scopes') === 'playlist'
+
   const { verifier, challenge } = createPkcePair()
   const state = createState()
 
@@ -48,6 +57,7 @@ export async function GET(request: Request): Promise<NextResponse> {
       origin,
       challenge,
       state,
+      extraScopes: wantsPlaylist ? [PLAYLIST_SCOPE] : undefined,
       // Let the host pick the account deliberately, rather than silently
       // reusing whichever one the browser is signed into.
       forceDialog: true,

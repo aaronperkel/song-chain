@@ -18,9 +18,17 @@ export {
   resetHostRefreshCache,
 } from './host'
 export { authorizeUrl, createPkcePair, createState, redirectUri, HOST_SCOPES } from './pkce'
+export {
+  addTracksToPlaylist,
+  createPlaylist,
+  hasPlaylistScope,
+  PLAYLIST_ADD_CHUNK,
+  PLAYLIST_SCOPE,
+} from './playlist'
 
 export type { SpotifyErrorKind } from './errors'
 export type { AppTrack, SpotifyTrack, SpotifyTokenResponse } from './types'
 export type { SearchOptions } from './search'
 export type { HostPlayback, HostProfile, HostQueue, HostTokens } from './host'
 export type { PkcePair } from './pkce'
+export type { CreatedPlaylist } from './playlist'
