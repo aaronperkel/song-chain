@@ -17,35 +17,44 @@ Steps 1-4 of the build order are done, verified and pushed. The game is playable
 | 2 | Search proxy + audit page | done — verified against 453 real Spotify titles |
 | 3 | Host PKCE auth + queue write | done — verified with live `POST /v1/me/player/queue` |
 | 4 | Rooms, codes, seats, turns, realtime | done — 290 hermetic + 58 db tests, full HTTP walkthrough |
-| — | **Deploy to production** | **next — blocking, see below** |
-| 5 | Runway, settings, host controls, manual mode | not started |
+| — | Deploy to production | done — live, one manual Spotify step left, see below |
+| 5 | Runway, settings, host controls, manual mode | **next** |
 | 6 | Polish | not started |
 
-## Start here: deploy to production
+## Production
 
-This is out of the original build order (deploy was step 6) and it is deliberate. **Hosting
-from a phone cannot be tested locally at all.** Spotify only accepts a redirect URI that is
-HTTPS or a loopback literal (`http://127.0.0.1:PORT`, `http://[::1]:PORT`) — `localhost` and
-LAN IPs like `192.168.1.184` are rejected and cannot even be registered. So in dev the host
-must sit on the laptop at `http://127.0.0.1:3000`. But this game is played in a car, and
-there is no laptop in a car: phone-hosting is the real deployment model, and everything left
-in step 5 is host-screen work. Build it against a configuration that can actually be used.
+Live at **https://song-chain-lemon.vercel.app** (stable alias; the per-deploy
+`song-chain-<hash>-aaronperkel.vercel.app` URLs change every time and are useless to Spotify).
+`APP_ORIGIN` is set in production to that origin, stored as a **config** value rather than a
+secret so it can be read back and checked — it has to match Spotify byte for byte, and a value
+you cannot read is a value you cannot verify. Deploy with `npx vercel deploy --prod`; the CLI
+is not a dependency and not installed globally.
 
-1. `vercel deploy --prod` (project is already linked: `aaronperkel/song-chain`).
-2. Read the production URL from the output. Then set the origin — `lib/api/origin.ts` prefers
-   `APP_ORIGIN` over the host header, and the redirect URI must match Spotify byte for byte:
-   `vercel env add APP_ORIGIN production` -> `https://<domain>` (no trailing slash).
-3. Ask Aaron to add `https://<domain>/api/auth/spotify/callback` to the Spotify dashboard's
-   redirect URIs (developer.spotify.com/dashboard -> the app -> Settings). Keep the existing
-   `http://127.0.0.1:3000/api/auth/spotify/callback` entry for local work.
-4. Redeploy so `APP_ORIGIN` takes effect, then verify on a phone: open `/host`, connect
-   Spotify, confirm the room reports `mode=live`, queue one track for real.
+Deploy was pulled ahead of the original build order deliberately. **Hosting from a phone cannot
+be tested locally at all.** Spotify only accepts a redirect URI that is HTTPS or a loopback
+literal (`http://127.0.0.1:PORT`, `http://[::1]:PORT`) — `localhost` and LAN IPs like
+`192.168.1.184` are rejected and cannot even be registered. So in dev the host must sit on the
+laptop at `http://127.0.0.1:3000`. But this game is played in a car, and there is no laptop in
+a car: phone-hosting is the real deployment model, and everything left in step 5 is host-screen
+work. Build it against a configuration that can actually be used.
 
-Production already has `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `TOKEN_ENC_KEY` and the
-Supabase vars. `APP_ORIGIN` is the only one missing. Dev and production share one Supabase
-database, so the migrations in `supabase/migrations/` are already applied — no separate
-production migration. Preview deployments get a fresh URL each time and so cannot complete
-Spotify auth; only production works.
+Verified in production: room creation works, and `/api/auth/spotify/login` redirects with
+`redirect_uri=https://song-chain-lemon.vercel.app/api/auth/spotify/callback` and the
+`user-read-private` scope present.
+
+### Blocked on Aaron — one manual step
+
+Add `https://song-chain-lemon.vercel.app/api/auth/spotify/callback` to the Spotify dashboard's
+redirect URIs (developer.spotify.com/dashboard -> the app -> Settings). Keep the existing
+`http://127.0.0.1:3000/api/auth/spotify/callback` entry for local work. Until then the host
+cannot connect Spotify in production and every room stays `mode=manual`.
+
+Then verify on a phone: open `/host`, connect Spotify, confirm the room reports `mode=live`,
+queue one track for real.
+
+Dev and production share one Supabase database, so the migrations in `supabase/migrations/` are
+already applied — no separate production migration. Preview deployments get a fresh URL each
+time and so cannot complete Spotify auth; only production works.
 
 ## Step 5
 
@@ -112,6 +121,18 @@ npm run build     # not while `next dev` is running (see iCloud below)
 - **`~/Documents` is iCloud-synced**, so `.next` output generates `" 2"` conflict copies that
   break `typecheck`. `tsconfig.json` excludes the pattern; don't run `build` while `dev` is
   live. Moving the repo out of iCloud is the real fix and is Aaron's call.
+- **On a second machine, iCloud evicts `node_modules` and `npm test`/`npm run build` hang
+  forever.** This is not a cache problem and there is nothing to clear. iCloud leaves *dataless
+  placeholders*: the files list normally and `stat -f%z` reports a real size, but `stat -f%b`
+  reports **0 blocks**, so every read blocks on a per-file download. `du -sh node_modules`
+  showing ~21M instead of ~500M is the tell. Fix: `rm -rf node_modules && npm ci`, then mark the
+  build dirs so iCloud stops touching them —
+  `xattr -w 'com.apple.fileprovider.ignore#P' 1 node_modules .next`. Both are already set on
+  Aaron's work machine.
+- **Deleting `.next` breaks `typecheck` until you build again.** Next 16 generates the global
+  `LayoutProps`/`PageProps` types into `.next/types`, which `tsconfig.json` includes, so a clean
+  `.next` makes `app/layout.tsx` fail with `TS2304: Cannot find name 'LayoutProps'`. Run
+  `npm run build` first; the error is an artifact of the clean, not a real type error.
 - **Supabase free tier pauses after ~7 days idle.** A dead app after a quiet week is this,
   not a bug.
 - **RLS plus revoked grants** are two independent barriers on every table, because Supabase
