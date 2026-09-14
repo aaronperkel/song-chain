@@ -4,7 +4,7 @@
  * api.spotify.com, and no Spotify token is ever returned to a browser.
  */
 export { getAppToken, resetAppTokenCache } from './appToken'
-export { searchTracks, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX } from './search'
+export { fetchTrack, searchTracks, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX } from './search'
 export { SpotifyError, isSpotifyError, readJson, toSpotifyError } from './errors'
 export { hasSpotifyCredentials, spotifyCredentials } from './env'
 export { toAppTrack } from './types'

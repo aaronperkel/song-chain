@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetAppTokenCache } from './appToken'
-import { searchTracks } from './search'
+import { fetchTrack, searchTracks } from './search'
 import { calledUrl, jsonResponse, searchPayload, spotifyTrack, tokenResponse } from './testing'
 
 const fetchMock = vi.fn<typeof fetch>()
@@ -139,5 +139,37 @@ describe('searchTracks', () => {
   it('rejects a search response it does not recognise', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ tracks: { items: 'nope' } }))
     await expect(searchTracks('anything')).rejects.toMatchObject({ kind: 'bad-response' })
+  })
+})
+
+describe('fetchTrack', () => {
+  it('looks a track up by id', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(spotifyTrack()))
+
+    const track = await fetchTrack('3n3Ppam7vgaVa1iaRUc9Lp')
+
+    const url = calledUrl(fetchMock, 1)
+    expect(`${url.origin}${url.pathname}`).toBe(
+      'https://api.spotify.com/v1/tracks/3n3Ppam7vgaVa1iaRUc9Lp',
+    )
+    expect(track?.title).toBe('Mr. Brightside')
+  })
+
+  it('returns null for a track that does not exist', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: { status: 404 } }, { status: 404 }))
+    await expect(fetchTrack('missing')).resolves.toBeNull()
+  })
+
+  it('escapes the id rather than interpolating it raw', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(spotifyTrack()))
+    await fetchTrack('a/../../b')
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('a%2F..%2F..%2Fb')
+  })
+
+  it('surfaces a rate limit', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({}, { status: 429, headers: { 'retry-after': '3' } }),
+    )
+    await expect(fetchTrack('x')).rejects.toMatchObject({ kind: 'rate-limited' })
   })
 })

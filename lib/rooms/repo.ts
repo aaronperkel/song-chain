@@ -213,3 +213,7 @@ export async function setRoomMode(
     isOverride,
   ])
 }
+
+export async function setRoomStatus(roomId: string, status: RoomStatus): Promise<void> {
+  await query('update rooms set status = $2 where id = $1', [roomId, status])
+}

@@ -1,8 +1,9 @@
 import { getAppToken } from './appToken'
 import { SpotifyError, readJson, toSpotifyError } from './errors'
-import { SpotifySearchResponseSchema, toAppTrack, type AppTrack } from './types'
+import { SpotifySearchResponseSchema, SpotifyTrackSchema, toAppTrack, type AppTrack } from './types'
 
 const SEARCH_URL = 'https://api.spotify.com/v1/search'
+const TRACK_URL = 'https://api.spotify.com/v1/tracks'
 
 /**
  * Spotify's search `limit` is documented as accepting up to 50, but this app
@@ -59,4 +60,35 @@ export async function searchTracks(
   return parsed.data.tracks.items
     .filter((item): item is NonNullable<typeof item> => item !== null)
     .map(toAppTrack)
+}
+
+/**
+ * One track by id.
+ *
+ * The server re-fetches every pick rather than trusting the title and artists
+ * the client sent: the rules engine decides validity from that metadata, so
+ * accepting it from the browser would let anyone fake a matching word.
+ */
+export async function fetchTrack(trackId: string, market = 'US'): Promise<AppTrack | null> {
+  const token = await getAppToken()
+  const params = new URLSearchParams({ market })
+
+  let response: Response
+  try {
+    response = await fetch(`${TRACK_URL}/${encodeURIComponent(trackId)}?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    })
+  } catch (cause) {
+    throw new SpotifyError('network', 'Could not reach Spotify', { cause })
+  }
+
+  if (response.status === 404) return null
+  if (!response.ok) throw await toSpotifyError(response, 'Track lookup')
+
+  const parsed = SpotifyTrackSchema.safeParse(await readJson(response, 'Track lookup'))
+  if (!parsed.success) {
+    throw new SpotifyError('bad-response', 'Unrecognised track response from Spotify')
+  }
+  return toAppTrack(parsed.data)
 }
