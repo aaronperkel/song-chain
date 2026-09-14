@@ -9,6 +9,7 @@ import { usePlaybackPoll } from '@/lib/host/use-playback-poll'
 import { toRulesHistory } from '@/lib/rooms/entry'
 import type { AppTrack } from '@/lib/spotify'
 import { SongSearch } from '@/app/room/[code]/song-search'
+import { HostControls } from './host-controls'
 import { RoomSettings } from './room-settings'
 import { SeatOrder } from './seat-order'
 
@@ -156,6 +157,25 @@ export function HostView({
             The chain so far
           </h2>
           <ChainRoute chain={state.chain} nowPlayingId={playback.nowPlayingEntryId} />
+        </section>
+
+        {/*
+          Below the chain: needed rarely, and never in a hurry, so they do not
+          earn space above the thing everyone is actually looking at.
+        */}
+        <section className="pt-7">
+          <h2 className="text-paint-dim border-dusk-line mx-4 border-t px-0 pt-4 pb-3 text-base">
+            If something goes wrong
+          </h2>
+          <HostControls
+            roomId={state.room.id}
+            status={state.room.status}
+            canUndo={state.chain.length > 0}
+            currentSeatName={currentSeat?.name ?? null}
+            onDone={() => {
+              void refresh()
+            }}
+          />
         </section>
 
         {/*

@@ -91,6 +91,17 @@ export async function setTurn(roomId: string, seatId: string | null): Promise<Tu
   return row === null ? null : toTurnState(row)
 }
 
+/**
+ * Hand the turn to the next seat without a pick, for the host's skip.
+ *
+ * Its own transaction because there is no pick to commit alongside it: the
+ * seat order is read and the pointer moved together, so a seat leaving
+ * mid-skip cannot strand the turn on a removed player.
+ */
+export async function skipTurn(roomId: string): Promise<TurnState> {
+  return transaction(async (client) => advanceTurn(client, roomId))
+}
+
 /** Has the current turn run past the room's timer? 0 means no timer. */
 export function turnHasExpired(
   turnStartedAt: string | null,

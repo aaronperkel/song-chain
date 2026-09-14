@@ -23,12 +23,24 @@ export type Pending = {
   trackId: string
   title: string
   attempts: number
+  /**
+   * Host-only: record the pick even though the rules rejected it. Carried on
+   * the attempt rather than passed per-request, so a retry after lost signal
+   * is still an override instead of being rejected all over again.
+   */
+  override?: boolean
 }
 
 /** A settled result. Anything unsettled is derived from the pending attempt. */
 type Outcome =
   | { status: 'done'; entry: StoredEntry; warning: string | null }
-  | { status: 'rejected'; title: string; explanation: Explanation; reason: string | null }
+  | {
+      status: 'rejected'
+      title: string
+      trackId: string
+      explanation: Explanation
+      reason: string | null
+    }
   | { status: 'error'; message: string }
 
 export type SubmitState =
@@ -61,6 +73,12 @@ function writePending(pending: Pending | null): void {
 export function useSubmit(roomId: string): {
   state: SubmitState
   submit: (track: AppTrack) => void
+  /**
+   * Host-only: send the pick the rules just rejected, recorded as an override.
+   * No-op unless the last outcome was a rejection, so there is nothing to
+   * force through by accident.
+   */
+  override: () => void
   dismiss: () => void
 } {
   const [pending, setPending] = useState<Pending | null>(null)
@@ -78,7 +96,11 @@ export function useSubmit(roomId: string): {
         const response = await fetch(`/api/rooms/${roomId}/picks`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ trackId: attempt.trackId, nonce: attempt.nonce }),
+          body: JSON.stringify({
+            trackId: attempt.trackId,
+            nonce: attempt.nonce,
+            ...(attempt.override === true ? { override: true } : {}),
+          }),
         })
         const body: unknown = await response.json()
 
@@ -89,6 +111,7 @@ export function useSubmit(roomId: string): {
           setOutcome({
             status: 'rejected',
             title: attempt.title,
+            trackId: attempt.trackId,
             explanation: rejection.explanation,
             reason: rejection.reason,
           })
@@ -122,8 +145,8 @@ export function useSubmit(roomId: string): {
     [roomId],
   )
 
-  const submit = useCallback(
-    (track: AppTrack): void => {
+  const start = useCallback(
+    (track: { id: string; title: string }, asOverride: boolean): void => {
       try {
         const attempt: Pending = {
           roomId,
@@ -133,6 +156,7 @@ export function useSubmit(roomId: string): {
           trackId: track.id,
           title: track.title,
           attempts: 0,
+          ...(asOverride ? { override: true } : {}),
         }
         writePending(attempt)
         setPending(attempt)
@@ -149,6 +173,25 @@ export function useSubmit(roomId: string): {
     },
     [roomId, send],
   )
+
+  const submit = useCallback(
+    (track: AppTrack): void => {
+      start(track, false)
+    },
+    [start],
+  )
+
+  /**
+   * Re-send the rejected pick with the host's blessing.
+   *
+   * A fresh nonce, because this is a different decision from the one the rules
+   * turned down -- and the rejected attempt never created an entry, so there is
+   * nothing for the old key to collapse into.
+   */
+  const override = useCallback((): void => {
+    if (outcome?.status !== 'rejected') return
+    start({ id: outcome.trackId, title: outcome.title }, true)
+  }, [outcome, start])
 
   // Resume a submit that a reload or a closed tab interrupted. The read has
   // to happen after mount, and `send` touches no state until its request
@@ -196,5 +239,5 @@ export function useSubmit(roomId: string): {
         ? { status: 'sending', title: pending.title }
         : { status: 'queued-offline', title: pending.title, attempts: pending.attempts })
 
-  return { state, submit, dismiss }
+  return { state, submit, override, dismiss }
 }

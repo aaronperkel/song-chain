@@ -15,6 +15,9 @@
 
 # next.js
 /.next/
+# iCloud conflict copies of the build output (see CLAUDE.md)
+/.next [0-9]*/
+/*\ [0-9]/
 /out/
 
 # production

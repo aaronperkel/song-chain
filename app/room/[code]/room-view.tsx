@@ -18,7 +18,7 @@ import { SongSearch } from './song-search'
  */
 export function RoomView({ initial }: { initial: RoomState }): React.JSX.Element {
   const { state, connection } = useRoom(initial)
-  const { state: submitState, submit, dismiss } = useSubmit(state.room.id)
+  const { state: submitState, submit, override, dismiss } = useSubmit(state.room.id)
 
   const previous = state.chain[state.chain.length - 1] ?? null
   const history = useMemo(() => toRulesHistory(state.chain), [state.chain])
@@ -70,7 +70,14 @@ export function RoomView({ initial }: { initial: RoomState }): React.JSX.Element
         </section>
 
         {submitState.status !== 'idle' ? (
-          <SubmitBanner state={submitState} onDismiss={dismiss} />
+          <SubmitBanner
+            state={submitState}
+            onDismiss={dismiss}
+            // Only the host, and the server enforces that independently. The
+            // button is hidden from everyone else so nobody spends the game
+            // asking why their override does nothing.
+            onOverride={state.you.isHost ? override : undefined}
+          />
         ) : null}
 
         {yourTurn ? (
@@ -111,9 +118,12 @@ function nextUpLabel(state: RoomState): string {
 function SubmitBanner({
   state,
   onDismiss,
+  onOverride,
 }: {
   state: ReturnType<typeof useSubmit>['state']
   onDismiss: () => void
+  /** Host-only. Absent for players, who cannot override a rejection. */
+  onOverride?: () => void
 }): React.JSX.Element | null {
   switch (state.status) {
     case 'idle':
@@ -161,6 +171,16 @@ function SubmitBanner({
           {state.explanation.sharedWords.length === 0 &&
           state.explanation.blockers === undefined ? (
             <span>It shares no word with the last song.</span>
+          ) : null}
+          {onOverride !== undefined ? (
+            <button
+              type="button"
+              onClick={onOverride}
+              // 44px minimum: used one-handed, in a car, to settle an argument.
+              className="border-paint text-paint mt-3 min-h-[44px] rounded-lg border px-4 py-2 text-base"
+            >
+              Allow it anyway
+            </button>
           ) : null}
         </Banner>
       )
