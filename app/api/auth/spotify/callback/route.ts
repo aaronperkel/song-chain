@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { appOrigin } from '@/lib/api/origin'
 import { seal } from '@/lib/crypto/seal'
+import type { AuthOutcome } from '@/lib/host/auth-outcome'
 import { currentHostRoomId } from '@/lib/host/session'
 import { STATE_COOKIE, VERIFIER_COOKIE } from '@/lib/host/pkce-cookies'
 import { saveHostIdentity } from '@/lib/rooms/repo'
@@ -13,6 +14,10 @@ import { exchangeCode, fetchHostProfile, isSpotifyError } from '@/lib/spotify'
  * Redirects back to the host screen with a short outcome in the query string
  * rather than rendering anything: the host is on a phone mid-setup, and a
  * dead-end page with an error body is useless to them.
+ *
+ * That screen is `/host`. It pointed at the step 3 lab, `/dev/host`, for as
+ * long as the lab was the only host screen there was, which landed every real
+ * host on a debug page halfway through setting up their game.
  */
 export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url)
@@ -27,8 +32,8 @@ export async function GET(request: Request): Promise<NextResponse> {
   store.delete(VERIFIER_COOKIE)
   store.delete(STATE_COOKIE)
 
-  const back = (outcome: string, detail?: string): NextResponse => {
-    const target = new URL('/dev/host', origin)
+  const back = (outcome: AuthOutcome, detail?: string): NextResponse => {
+    const target = new URL('/host', origin)
     target.searchParams.set('auth', outcome)
     if (detail !== undefined) target.searchParams.set('detail', detail)
     return NextResponse.redirect(target)

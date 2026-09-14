@@ -41,6 +41,8 @@ export default async function HostLabPage({
     <main>
       <HostLab
         initialRoom={initialRoom}
+        // Connecting from here now lands on /host, where a real host belongs,
+        // so these are only read if you come back to the lab by hand.
         authOutcome={first(params.auth)}
         authDetail={first(params.detail)}
       />

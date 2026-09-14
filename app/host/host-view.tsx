@@ -31,9 +31,12 @@ import { SeatOrder } from './seat-order'
 export function HostView({
   initial,
   joinPanel,
+  authNotice = null,
 }: {
   initial: RoomState
   joinPanel: React.ReactNode
+  /** Why the last trip through Spotify did not connect, if it did not. */
+  authNotice?: string | null
 }): React.JSX.Element {
   const { state, connection, refresh } = useRoom(initial)
   const { state: submitState, submit, override, dismiss } = useSubmit(state.room.id)
@@ -92,6 +95,11 @@ export function HostView({
           <section className="px-4 pt-5">
             <div className="border-sodium bg-dusk-raised rounded-lg border px-4 py-3">
               <strong className="text-paint block text-lg">Spotify is not connected</strong>
+              {authNotice !== null ? (
+                <p className="text-brake mt-1 text-sm leading-snug" role="alert">
+                  {authNotice}
+                </p>
+              ) : null}
               <p className="text-paint-dim mt-1 text-sm leading-snug">
                 The game works without it, but nothing will play automatically.
               </p>

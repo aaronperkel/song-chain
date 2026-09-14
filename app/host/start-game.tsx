@@ -6,8 +6,11 @@ import { useState } from 'react'
 /**
  * The first thing a host does. One button, because everything else -- the
  * code, the QR, Spotify -- follows from having a room.
+ *
+ * `notice` is how a host who came back from Spotify with no room left finds
+ * out why they are looking at this screen and not their game.
  */
-export function StartGame(): React.JSX.Element {
+export function StartGame({ notice = null }: { notice?: string | null }): React.JSX.Element {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,9 +44,9 @@ export function StartGame(): React.JSX.Element {
       </div>
 
       <div>
-        {error !== null ? (
+        {(error ?? notice) !== null ? (
           <p className="text-brake mb-4 text-base" role="alert">
-            {error}
+            {error ?? notice}
           </p>
         ) : null}
         <button
