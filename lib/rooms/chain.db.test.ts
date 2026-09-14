@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closePool } from '@/lib/db'
 import type { AppTrack } from '@/lib/spotify'
 import { dropRoom, makeRoom } from '@/test/room-fixture'
-import { appendPick, findEntryByNonce, lastEntry, listChain, removeLastEntry, runway } from './chain'
+import {
+  appendPick,
+  findEntryByNonce,
+  lastEntry,
+  listChain,
+  markQueued,
+  removeLastEntry,
+  runway,
+  TurnMovedError,
+} from './chain'
 import { joinRoom } from './seats'
 import { advanceTurn, readTurn, setTurn, startTurnAtFirstSeat } from './turns'
 import { transaction } from '@/lib/db'
@@ -23,7 +32,14 @@ const track = (title: string, artist = 'Someone', durationMs = 180_000): AppTrac
 
 const pick = async (
   title: string,
-  options: { seatId?: string; nonce?: string; isSeed?: boolean; durationMs?: number } = {},
+  options: {
+    /** Null falls through to the first seat, as an omitted one does. */
+    seatId?: string | null
+    nonce?: string
+    isSeed?: boolean
+    durationMs?: number
+    requireTurnAt?: string | null
+  } = {},
 ) =>
   appendPick({
     roomId,
@@ -36,6 +52,7 @@ const pick = async (
     wasOverride: false,
     queuedToSpotify: false,
     clientNonce: options.nonce ?? `nonce-${title}-${String(Math.random()).slice(2, 10)}`,
+    requireTurnAt: options.requireTurnAt ?? null,
   })
 
 beforeEach(async () => {
@@ -245,5 +262,93 @@ describe('runway', () => {
 
   it('is zero on an empty chain', async () => {
     expect(await runway(roomId)).toEqual({ ms: 0, songs: 0 })
+  })
+})
+
+describe('one turn, one song', () => {
+  /*
+    Two passengers both typing what the driver just said is the designed
+    interaction, not a rare collision. Without the guard both picks land: the
+    driver gets two songs in a row and the next player is skipped.
+  */
+  it('lets only one of two simultaneous picks for the same turn land', async () => {
+    const up = (await readTurn(roomId))?.currentSeatId ?? null
+
+    const outcomes = await Promise.allSettled([
+      pick('Sam types this', { seatId: up, requireTurnAt: up }),
+      pick('Jo types that', { seatId: up, requireTurnAt: up }),
+    ])
+
+    const landed = outcomes.filter((o) => o.status === 'fulfilled')
+    const turnedAway = outcomes.filter((o) => o.status === 'rejected')
+
+    expect(landed).toHaveLength(1)
+    expect(turnedAway).toHaveLength(1)
+    expect((turnedAway[0] as PromiseRejectedResult).reason).toBeInstanceOf(TurnMovedError)
+    expect(await listChain(roomId)).toHaveLength(1)
+
+    // And the turn moved exactly one seat, not two.
+    expect((await readTurn(roomId))?.currentSeatId).toBe(seats[1])
+  })
+
+  it('rolls the losing pick back rather than half-writing it', async () => {
+    const up = (await readTurn(roomId))?.currentSeatId ?? null
+    await pick('First', { seatId: up, requireTurnAt: up })
+
+    await expect(pick('Second', { seatId: up, requireTurnAt: up })).rejects.toBeInstanceOf(
+      TurnMovedError,
+    )
+    expect(await findEntryByNonce(roomId, 'nonce-Second')).toBeNull()
+    expect(await listChain(roomId)).toHaveLength(1)
+  })
+
+  it('still answers a retry of the winning pick from the chain', async () => {
+    // The turn has moved on *because* this pick landed. Re-judging it against
+    // the turn is the one thing idempotency exists to prevent.
+    const up = (await readTurn(roomId))?.currentSeatId ?? null
+    const first = await pick('Sent twice', { seatId: up, requireTurnAt: up, nonce: 'retried' })
+    const again = await pick('Sent twice', { seatId: up, requireTurnAt: up, nonce: 'retried' })
+
+    expect(again.wasDuplicate).toBe(true)
+    expect(again.entry.id).toBe(first.entry.id)
+    expect(await listChain(roomId)).toHaveLength(1)
+  })
+
+  it('holds a pick that depended on no turn to nothing', async () => {
+    // The host picks out of turn on purpose; there is no race to lose.
+    const up = (await readTurn(roomId))?.currentSeatId ?? null
+    await pick('Host one', { seatId: up, requireTurnAt: null })
+    await pick('Host two', { seatId: up, requireTurnAt: null })
+    expect(await listChain(roomId)).toHaveLength(2)
+  })
+})
+
+describe('marking a song queued', () => {
+  it('flips the flag only once Spotify has actually taken it', async () => {
+    const appended = await pick('Queued later')
+    expect(appended.entry.queuedToSpotify).toBe(false)
+
+    const marked = await markQueued(appended.entry.id)
+    expect(marked?.queuedToSpotify).toBe(true)
+    expect(marked?.seatName).toBe('A')
+  })
+
+  it('keeps an entry that nobody is attributed to', async () => {
+    // A host with no seat leaves seat_id null; an inner join would lose the row.
+    const appended = await appendPick({
+      roomId,
+      track: track('Nobody picked this'),
+      matchedWord: 'word',
+      matchedOn: 'title',
+      via: 'exact',
+      seatId: null,
+      isSeed: false,
+      wasOverride: false,
+      queuedToSpotify: false,
+      clientNonce: 'unattributed',
+    })
+    const marked = await markQueued(appended.entry.id)
+    expect(marked?.queuedToSpotify).toBe(true)
+    expect(marked?.seatName).toBeNull()
   })
 })

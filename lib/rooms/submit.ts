@@ -6,9 +6,11 @@ import {
   findEntryByNonce,
   lastEntry,
   listChain,
+  markQueued,
   runway,
   toRulesHistory,
   toRulesTrack,
+  TurnMovedError,
   type StoredEntry,
 } from './chain'
 import type { Room } from './repo'
@@ -35,6 +37,8 @@ export type SubmitOutcome =
       result: MatchResult
       explanation: Explanation
     }
+  /** Somebody else's song landed on this turn first. */
+  | { ok: false; reason: 'turn-moved' }
 
 export type SubmitInput = {
   room: Room
@@ -43,6 +47,11 @@ export type SubmitInput = {
   clientNonce: string
   /** Host override records the pick even though the rules rejected it. */
   override: boolean
+  /**
+   * The seat the turn must still be pointing at when this commits. Null when
+   * the pick did not depend on the turn -- a host pick, or the seed.
+   */
+  requireTurnAt?: string | null
 }
 
 export async function submitPick(input: SubmitInput): Promise<SubmitOutcome> {
@@ -95,16 +104,48 @@ export async function submitPick(input: SubmitInput): Promise<SubmitOutcome> {
     }
   }
 
-  // Push to Spotify *before* recording, so the chain does not claim a song is
-  // queued when it is not. A queue failure is not fatal: the pick is still a
-  // legitimate move, and manual mode is the documented fallback.
-  let queuedToSpotify = false
+  /*
+    Win the turn before touching Spotify.
+
+    Recording first used to be the wrong way round -- the chain would claim a
+    song was queued before Spotify had agreed -- but the row starts at
+    `queued_to_spotify = false` and is only flipped once Spotify accepts, so
+    it never claims anything it has not done. What recording first *does* buy
+    is that the loser of a race between two people typing for the driver is
+    turned away before a song they are not going to get credit for is already
+    playing in the car.
+  */
+  const isSeed = previous === undefined
+  let appended
+  try {
+    appended = await appendPick({
+      roomId: room.id,
+      track,
+      matchedWord: isSeed || !result.valid ? null : result.matchedWord,
+      matchedOn: isSeed || !result.valid ? null : result.matchedOn,
+      via: isSeed || !result.valid ? null : result.via,
+      seatId,
+      isSeed,
+      wasOverride: override && !result.valid,
+      queuedToSpotify: false,
+      clientNonce,
+      requireTurnAt: input.requireTurnAt ?? null,
+    })
+  } catch (error) {
+    if (error instanceof TurnMovedError) return { ok: false, reason: 'turn-moved' }
+    throw error
+  }
+
+  // A queue failure is not fatal: the pick is still a legitimate move, and
+  // manual mode is the documented fallback. A replay must not queue the song
+  // a second time -- the original attempt already did.
+  let entry = appended.entry
   let queueWarning: string | null = null
 
-  if (room.mode === 'live') {
+  if (room.mode === 'live' && !appended.wasDuplicate) {
     try {
       await queueTrack(room.id, track.uri)
-      queuedToSpotify = true
+      entry = (await markQueued(entry.id)) ?? entry
     } catch (error) {
       queueWarning = isSpotifyError(error)
         ? queueWarningFor(error.kind)
@@ -113,31 +154,17 @@ export async function submitPick(input: SubmitInput): Promise<SubmitOutcome> {
     }
   }
 
-  const isSeed = previous === undefined
-  const appended = await appendPick({
-    roomId: room.id,
-    track,
-    matchedWord: isSeed || !result.valid ? null : result.matchedWord,
-    matchedOn: isSeed || !result.valid ? null : result.matchedOn,
-    via: isSeed || !result.valid ? null : result.via,
-    seatId,
-    isSeed,
-    wasOverride: override && !result.valid,
-    queuedToSpotify,
-    clientNonce,
-  })
-
   const queued = await runway(room.id)
   await broadcastRoomEvent(room.id, {
     type: isSeed ? 'seed' : 'pick',
-    entry: appended.entry,
+    entry,
     turn: appended.turn,
     runway: queued,
   })
 
   return {
     ok: true,
-    entry: appended.entry,
+    entry,
     turn: appended.turn,
     wasDuplicate: appended.wasDuplicate,
     queueWarning,

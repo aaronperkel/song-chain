@@ -29,6 +29,13 @@ export type Pending = {
    * is still an override instead of being rejected all over again.
    */
   override?: boolean
+  /**
+   * Set when this pick is being made for somebody else -- the driver, who has
+   * no screen to look at. Carried on the attempt for the same reason as
+   * `override`: a retry after lost signal has to stay *their* song, not the
+   * song of whoever's phone happened to send it.
+   */
+  forSeatId?: string
 }
 
 /** A settled result. Anything unsettled is derived from the pending attempt. */
@@ -40,6 +47,7 @@ type Outcome =
       trackId: string
       explanation: Explanation
       reason: string | null
+      forSeatId?: string
     }
   | { status: 'error'; message: string }
 
@@ -70,9 +78,12 @@ function writePending(pending: Pending | null): void {
   }
 }
 
+/** Who a pick is for, when it is not for the person holding the phone. */
+export type PickFor = { forSeatId?: string }
+
 export function useSubmit(roomId: string): {
   state: SubmitState
-  submit: (track: AppTrack) => void
+  submit: (track: AppTrack, on?: PickFor) => void
   /**
    * Host-only: send the pick the rules just rejected, recorded as an override.
    * No-op unless the last outcome was a rejection, so there is nothing to
@@ -100,6 +111,7 @@ export function useSubmit(roomId: string): {
             trackId: attempt.trackId,
             nonce: attempt.nonce,
             ...(attempt.override === true ? { override: true } : {}),
+            ...(attempt.forSeatId === undefined ? {} : { forSeatId: attempt.forSeatId }),
           }),
         })
         const body: unknown = await response.json()
@@ -114,6 +126,7 @@ export function useSubmit(roomId: string): {
             trackId: attempt.trackId,
             explanation: rejection.explanation,
             reason: rejection.reason,
+            ...(attempt.forSeatId === undefined ? {} : { forSeatId: attempt.forSeatId }),
           })
           return
         }
@@ -146,7 +159,11 @@ export function useSubmit(roomId: string): {
   )
 
   const start = useCallback(
-    (track: { id: string; title: string }, asOverride: boolean): void => {
+    (
+      track: { id: string; title: string },
+      asOverride: boolean,
+      forSeatId: string | undefined,
+    ): void => {
       try {
         const attempt: Pending = {
           roomId,
@@ -157,6 +174,7 @@ export function useSubmit(roomId: string): {
           title: track.title,
           attempts: 0,
           ...(asOverride ? { override: true } : {}),
+          ...(forSeatId === undefined ? {} : { forSeatId }),
         }
         writePending(attempt)
         setPending(attempt)
@@ -175,8 +193,8 @@ export function useSubmit(roomId: string): {
   )
 
   const submit = useCallback(
-    (track: AppTrack): void => {
-      start(track, false)
+    (track: AppTrack, on?: PickFor): void => {
+      start(track, false, on?.forSeatId)
     },
     [start],
   )
@@ -190,7 +208,7 @@ export function useSubmit(roomId: string): {
    */
   const override = useCallback((): void => {
     if (outcome?.status !== 'rejected') return
-    start({ id: outcome.trackId, title: outcome.title }, true)
+    start({ id: outcome.trackId, title: outcome.title }, true, outcome.forSeatId)
   }, [outcome, start])
 
   // Resume a submit that a reload or a closed tab interrupted. The read has

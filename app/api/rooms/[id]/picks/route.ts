@@ -4,10 +4,11 @@ import { badRequest, spotifyErrorResponse } from '@/lib/api/respond'
 import { isHostOf } from '@/lib/host/session'
 import { currentSeatId } from '@/lib/player/session'
 import { findEntryByNonce } from '@/lib/rooms/chain'
+import { authorizePick, type PickTarget } from '@/lib/rooms/picking'
 import { findRoomById } from '@/lib/rooms/repo'
+import { findSeat } from '@/lib/rooms/seats'
 import { submitPick } from '@/lib/rooms/submit'
 import { readTurn } from '@/lib/rooms/turns'
-import { turnHasExpired } from '@/lib/rooms/turns'
 import { fetchTrack } from '@/lib/spotify'
 
 /**
@@ -27,6 +28,12 @@ const BodySchema = z.object({
   nonce: z.string().min(8).max(128),
   /** Host-only: record the pick even though the rules rejected it. */
   override: z.boolean().optional(),
+  /**
+   * Pick on another seat's behalf: the driver says a song, somebody with a
+   * free pair of hands types it. Only seats marked as having no phone can be
+   * picked for, and the entry is credited to them rather than to the typist.
+   */
+  forSeatId: z.string().uuid().optional(),
 })
 
 export async function POST(
@@ -84,37 +91,39 @@ export async function POST(
     })
   }
 
-  const [seatId, isHost] = await Promise.all([currentSeatId(id), isHostOf(id)])
+  const [callerSeatId, isHost, turn] = await Promise.all([
+    currentSeatId(id),
+    isHostOf(id),
+    readTurn(id),
+  ])
   const wantsOverride = parsed.data.override === true
 
-  if (wantsOverride && !isHost) {
-    return NextResponse.json(
-      { error: 'not-host', message: 'Only the host can override a rejection.' },
-      { status: 403 },
-    )
+  // Resolved here rather than inside the rules, so a seat from another room
+  // or one that has been removed is a plain 404 and never a judgement call.
+  let forSeat: PickTarget | null = null
+  if (parsed.data.forSeatId !== undefined) {
+    const target = await findSeat(parsed.data.forSeatId)
+    if (target === null || target.roomId !== id || target.removedAt !== null) {
+      return NextResponse.json(
+        { error: 'no-such-seat', message: 'That player is not in this room.' },
+        { status: 404 },
+      )
+    }
+    forSeat = { id: target.id, name: target.name, hasPhone: target.hasPhone }
   }
 
-  if (seatId === null && !isHost) {
+  const allowed = authorizePick({
+    callerSeatId,
+    isHost,
+    wantsOverride,
+    forSeat,
+    turn: turn ?? { currentSeatId: null, turnStartedAt: null },
+    turnTimer: room.settings.turnTimer,
+  })
+  if (!allowed.ok) {
     return NextResponse.json(
-      { error: 'no-seat', message: 'Join the room before picking.' },
-      { status: 403 },
-    )
-  }
-
-  // Turn order, enforced server-side. The host may pick out of turn, since
-  // they are the one holding the phone that plays the music.
-  const turn = await readTurn(id)
-  const expired = turnHasExpired(turn?.turnStartedAt ?? null, room.settings.turnTimer)
-  if (
-    seatId !== null &&
-    !isHost &&
-    turn?.currentSeatId !== null &&
-    turn?.currentSeatId !== seatId &&
-    !expired
-  ) {
-    return NextResponse.json(
-      { error: 'not-your-turn', message: "It is not your turn yet." },
-      { status: 409 },
+      { error: allowed.error, message: allowed.message },
+      { status: allowed.status },
     )
   }
 
@@ -130,12 +139,22 @@ export async function POST(
     const outcome = await submitPick({
       room,
       track,
-      seatId,
+      seatId: allowed.seatId,
       clientNonce: parsed.data.nonce,
       override: wantsOverride,
+      requireTurnAt: allowed.requireTurnAt,
     })
 
     if (!outcome.ok) {
+      // Two people typing for the same phoneless seat is the normal case, not
+      // an error in the request: one of them was always going to lose.
+      if (outcome.reason === 'turn-moved') {
+        return NextResponse.json(
+          { error: 'turn-moved', message: 'Somebody got there first — that turn has gone.' },
+          { status: 409 },
+        )
+      }
+
       // 422: the request was well-formed, the move was not legal.
       return NextResponse.json(
         {

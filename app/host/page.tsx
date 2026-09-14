@@ -24,13 +24,11 @@ export default async function HostPage(): Promise<React.JSX.Element> {
   const room = await findRoomById(roomId)
   if (room === null) return <StartGame />
 
-  const [seatId, state] = await Promise.all([
-    currentSeatId(roomId),
-    buildRoomState(roomId, { seatId: null, isHost: true }),
-  ])
+  // Read before the room rather than alongside it: the host may be playing
+  // too, and whether it is their turn is decided from the seat they hold.
+  const seatId = await currentSeatId(roomId)
+  const state = await buildRoomState(roomId, { seatId, isHost: true })
   if (state === null) return <StartGame />
-
-  const withSeat = { ...state, you: { ...state.you, seatId } }
 
   // Built here so the QR is rendered on the server, and so the join link
   // matches the origin this phone actually used.
@@ -42,7 +40,7 @@ export default async function HostPage(): Promise<React.JSX.Element> {
 
   return (
     <>
-      <HostView initial={withSeat} joinPanel={<JoinPanel code={room.code} joinUrl={joinUrl} />} />
+      <HostView initial={state} joinPanel={<JoinPanel code={room.code} joinUrl={joinUrl} />} />
       {state.chain.length > 0 ? (
         <footer className="mx-auto w-full max-w-lg px-4 pb-8">
           <Link href={`/room/${room.code}`} className="text-paint-dim text-base underline">

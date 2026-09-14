@@ -10,6 +10,11 @@ export type Seat = {
   /** Null once removed: a removed seat gives up its place. */
   position: number | null
   isHost: boolean
+  /**
+   * False when no phone holds this seat -- the driver, or a dead battery.
+   * Its turn is filled by whoever is quickest, and the pick is still theirs.
+   */
+  hasPhone: boolean
   lastSeenAt: string
   removedAt: string | null
 }
@@ -20,11 +25,12 @@ type SeatRow = {
   name: string
   position: number | null
   is_host: boolean
+  has_phone: boolean
   last_seen_at: Date
   removed_at: Date | null
 }
 
-const SEAT_COLUMNS = 'id, room_id, name, position, is_host, last_seen_at, removed_at'
+const SEAT_COLUMNS = 'id, room_id, name, position, is_host, has_phone, last_seen_at, removed_at'
 
 function toSeat(row: SeatRow): Seat {
   return {
@@ -33,6 +39,7 @@ function toSeat(row: SeatRow): Seat {
     name: row.name,
     position: row.position,
     isHost: row.is_host,
+    hasPhone: row.has_phone,
     lastSeenAt: row.last_seen_at.toISOString(),
     removedAt: row.removed_at === null ? null : row.removed_at.toISOString(),
   }
@@ -74,11 +81,16 @@ export async function findSeat(seatId: string): Promise<Seat | null> {
  * existing seat because the name matched would let anyone steal a turn. A
  * player who genuinely lost their cookie gets their seat passed to them by
  * the host instead.
+ *
+ * `hasPhone: false` seats somebody who is playing without a screen -- the
+ * driver. A secret is still minted and still nobody holds it, which is the
+ * safe direction: the seat is proxied because the flag says so, never because
+ * a token happened to be guessable.
  */
 export async function joinRoom(
   roomId: string,
   name: string,
-  options: { isHost?: boolean } = {},
+  options: { isHost?: boolean; hasPhone?: boolean } = {},
 ): Promise<{ seat: Seat; secret: string }> {
   const trimmed = name.trim().slice(0, MAX_NAME_LENGTH)
   const secret = newSecret()
@@ -104,10 +116,17 @@ export async function joinRoom(
 
     const nextPosition = counts.next
     const { rows } = await client.query<SeatRow>(
-      `insert into seats (room_id, name, position, is_host, player_token_hash)
-       values ($1, $2, $3, $4, $5)
+      `insert into seats (room_id, name, position, is_host, has_phone, player_token_hash)
+       values ($1, $2, $3, $4, $5, $6)
        returning ${SEAT_COLUMNS}`,
-      [roomId, trimmed, nextPosition, options.isHost ?? false, hashSecret(secret)],
+      [
+        roomId,
+        trimmed,
+        nextPosition,
+        options.isHost ?? false,
+        options.hasPhone ?? true,
+        hashSecret(secret),
+      ],
     )
 
     const row = rows[0]
@@ -241,6 +260,9 @@ export async function removeSeat(
  * token invalidates the old device and yields a one-time secret the host can
  * give to the new one. Without this, a lost cookie means a lost seat for the
  * rest of the game.
+ *
+ * A phone taking the seat ends the proxy arrangement: they can see the screen
+ * again, so they pick for themselves.
  */
 export async function passSeat(
   roomId: string,
@@ -248,12 +270,35 @@ export async function passSeat(
 ): Promise<{ seat: Seat; secret: string } | null> {
   const secret = newSecret()
   const row = await queryOne<SeatRow>(
-    `update seats set player_token_hash = $3
+    `update seats set player_token_hash = $3, has_phone = true
      where id = $1 and room_id = $2 and removed_at is null
      returning ${SEAT_COLUMNS}`,
     [seatId, roomId, hashSecret(secret)],
   )
   return row === null ? null : { seat: toSeat(row), secret }
+}
+
+/**
+ * Say whether a phone holds this seat.
+ *
+ * Deliberately *not* a token operation. Turning it off leaves the seat's
+ * secret alone, so a phone that comes back from a dead battery still has its
+ * seat, and turning it back on is a plain flip rather than a re-issue the
+ * host would have to read out. The flag answers one question only: may
+ * somebody else pick for this seat.
+ */
+export async function setSeatPhone(
+  roomId: string,
+  seatId: string,
+  hasPhone: boolean,
+): Promise<Seat | null> {
+  const row = await queryOne<SeatRow>(
+    `update seats set has_phone = $3
+     where id = $1 and room_id = $2 and removed_at is null
+     returning ${SEAT_COLUMNS}`,
+    [seatId, roomId, hasPhone],
+  )
+  return row === null ? null : toSeat(row)
 }
 
 async function readSeatsFor(client: pg.PoolClient, roomId: string): Promise<Seat[]> {

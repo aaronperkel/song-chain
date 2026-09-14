@@ -77,8 +77,13 @@ export async function POST(
     })
 
     if (!outcome.ok) {
+      // The seed depends on no turn, so `turn-moved` cannot reach here; the
+      // narrowing is what says so rather than a comment hoping it is true.
       return NextResponse.json(
-        { error: 'rejected', explanation: outcome.explanation },
+        {
+          error: 'rejected',
+          explanation: outcome.reason === 'rejected' ? outcome.explanation : { sharedWords: [] },
+        },
         { status: 422 },
       )
     }

@@ -9,6 +9,7 @@ import {
   renameSeat,
   reorderSeats,
   seatMatches,
+  setSeatPhone,
   shuffleSeats,
   MAX_SEATS,
   SeatError,
@@ -75,6 +76,60 @@ describe('taking a seat', () => {
     const { seat, secret } = await joinRoom(roomId, 'Aaron')
     expect(await seatMatches(seat.id, secret)).toBe(true)
     expect(await seatMatches(seat.id, 'wrong-secret')).toBe(false)
+  })
+
+  it('assumes a phone holds the seat, because joining takes a browser', async () => {
+    const { seat } = await joinRoom(roomId, 'Aaron')
+    expect(seat.hasPhone).toBe(true)
+  })
+})
+
+describe('a seat with no phone', () => {
+  it('takes its place in the turn order like any other', async () => {
+    await join('Sam')
+    const { seat } = await joinRoom(roomId, 'Aaron', { hasPhone: false })
+
+    expect(seat.hasPhone).toBe(false)
+    expect((await listSeats(roomId)).map((row) => [row.name, row.position, row.hasPhone])).toEqual([
+      ['Sam', 0, true],
+      ['Aaron', 1, false],
+    ])
+  })
+
+  it('cannot be claimed by guessing, since nobody holds its secret', async () => {
+    const { seat, secret } = await joinRoom(roomId, 'Aaron', { hasPhone: false })
+    // The secret exists and is real -- it is simply never handed out.
+    expect(await seatMatches(seat.id, secret)).toBe(true)
+    expect(await seatMatches(seat.id, 'guess')).toBe(false)
+  })
+
+  it('goes both ways, and leaves the seat token alone', async () => {
+    const { seat, secret } = await joinRoom(roomId, 'Aaron')
+
+    // Their phone is in the boot; anyone may pick for them.
+    expect((await setSeatPhone(roomId, seat.id, false))?.hasPhone).toBe(false)
+    // And when it turns up again the seat is still theirs, with no secret to
+    // read out: this is a flag, not a re-issue.
+    expect(await seatMatches(seat.id, secret)).toBe(true)
+    expect((await setSeatPhone(roomId, seat.id, true))?.hasPhone).toBe(true)
+  })
+
+  it('refuses a seat from another room', async () => {
+    const { seat } = await joinRoom(roomId, 'Aaron', { hasPhone: false })
+    const elsewhere = await makeRoom()
+    try {
+      expect(await setSeatPhone(elsewhere.room.id, seat.id, true)).toBeNull()
+    } finally {
+      await dropRoom(elsewhere.room.id)
+    }
+  })
+
+  it('is what a passed seat stops being', async () => {
+    // Handing the seat to a device ends the proxy arrangement: they can see
+    // a screen again, so they pick for themselves.
+    const { seat } = await joinRoom(roomId, 'Aaron', { hasPhone: false })
+    const passed = await passSeat(roomId, seat.id)
+    expect(passed?.seat.hasPhone).toBe(true)
   })
 })
 

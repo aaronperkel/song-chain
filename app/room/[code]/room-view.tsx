@@ -3,10 +3,12 @@
 import { useMemo } from 'react'
 import { ChainRoute } from '@/components/chain-route'
 import { RoomChrome } from '@/components/room-chrome'
+import { SubmitBanner } from '@/components/submit-banner'
 import type { RoomState } from '@/lib/api/room-state'
 import { useSubmit } from '@/lib/player/use-submit'
 import { useRoom } from '@/lib/realtime/use-room'
 import { toRulesHistory } from '@/lib/rooms/entry'
+import { turnView } from '@/lib/rooms/whose-turn'
 import { SongSearch } from './song-search'
 
 /**
@@ -23,8 +25,8 @@ export function RoomView({ initial }: { initial: RoomState }): React.JSX.Element
   const previous = state.chain[state.chain.length - 1] ?? null
   const history = useMemo(() => toRulesHistory(state.chain), [state.chain])
 
-  const currentSeat = state.seats.find((seat) => seat.id === state.turn.currentSeatId) ?? null
-  const yourTurn = state.you.isYourTurn
+  const view = turnView(state)
+  const yourMove = view.kind === 'yours' || view.kind === 'for-them'
   const waitingToStart = state.chain.length === 0
 
   return (
@@ -45,7 +47,7 @@ export function RoomView({ initial }: { initial: RoomState }): React.JSX.Element
                 {state.room.hostDisplayName ?? 'The host'} is choosing the first song.
               </p>
             </>
-          ) : yourTurn ? (
+          ) : view.kind === 'yours' ? (
             <>
               <h1 className="font-display text-sodium text-shout turn-arrives uppercase">
                 Your turn
@@ -55,10 +57,26 @@ export function RoomView({ initial }: { initial: RoomState }): React.JSX.Element
                 <span className="text-paint">{previous?.track.title}</span>
               </p>
             </>
+          ) : view.kind === 'for-them' ? (
+            <>
+              {/*
+                The driver is playing; they just cannot look at a screen. They
+                say the song, anyone types it, and the chain still credits
+                them. Said plainly, because the alternative is a table full of
+                people waiting on somebody who is watching the road.
+              */}
+              <h1 className="font-display text-sodium text-call turn-arrives uppercase">
+                Pick for {view.seat.name}
+              </h1>
+              <p className="text-paint-dim mt-1 text-base">
+                No phone in that seat. Type what they say — first one in counts, and the song is
+                still theirs.
+              </p>
+            </>
           ) : (
             <>
               <h1 className="font-display text-paint text-call uppercase">
-                {currentSeat === null ? 'Nobody is up' : `${currentSeat.name} is picking`}
+                {view.kind === 'nobody' ? 'Nobody is up' : `${view.seat.name} is picking`}
               </h1>
               <p className="text-paint-dim mt-1 text-base">
                 {state.you.seatId === null
@@ -80,13 +98,18 @@ export function RoomView({ initial }: { initial: RoomState }): React.JSX.Element
           />
         ) : null}
 
-        {yourTurn ? (
+        {yourMove ? (
           <section className="px-4 pb-6">
             <SongSearch
               previous={previous}
               history={history}
               settings={state.room.settings}
-              onPick={submit}
+              onPick={(track) => {
+                // Named explicitly rather than inferred from the turn: the
+                // server has to know this is somebody else's song, and by the
+                // time a retry goes through the turn may have moved on.
+                submit(track, view.kind === 'for-them' ? { forSeatId: view.seat.id } : undefined)
+              }}
               disabled={submitState.status === 'sending'}
             />
           </section>
@@ -119,113 +142,4 @@ function nextUpLabel(state: RoomState): string {
   const away = (yourIndex - currentIndex + order.length) % order.length
   if (away === 1) return 'You are next.'
   return `${String(away)} players before you.`
-}
-
-function SubmitBanner({
-  state,
-  onDismiss,
-  onOverride,
-}: {
-  state: ReturnType<typeof useSubmit>['state']
-  onDismiss: () => void
-  /** Host-only. Absent for players, who cannot override a rejection. */
-  onOverride?: () => void
-}): React.JSX.Element | null {
-  switch (state.status) {
-    case 'idle':
-      return null
-    case 'sending':
-      return (
-        <Banner tone="quiet">
-          <span>Adding {state.title}</span>
-        </Banner>
-      )
-    case 'queued-offline':
-      return (
-        <Banner tone="warn">
-          <strong className="block text-lg">No signal</strong>
-          <span>
-            {state.title} is waiting to send. It will go through by itself — keep this screen open.
-          </span>
-        </Banner>
-      )
-    case 'done':
-      return (
-        <Banner tone="good" onDismiss={onDismiss}>
-          <strong className="block text-lg">Added {state.entry.track.title}</strong>
-          {state.warning !== null ? <span>{state.warning}</span> : null}
-        </Banner>
-      )
-    case 'rejected':
-      return (
-        <Banner tone="bad" onDismiss={onDismiss}>
-          <strong className="block text-lg">{state.title} does not link</strong>
-          {state.explanation.blockers?.map((blocker) => (
-            <span key={blocker.kind} className="block">
-              {blocker.why}
-            </span>
-          ))}
-          {state.explanation.blockers === undefined
-            ? state.explanation.sharedWords
-                .filter((word) => !word.accepted)
-                .map((word) => (
-                  <span key={word.word} className="block">
-                    {word.why}
-                  </span>
-                ))
-            : null}
-          {state.explanation.sharedWords.length === 0 &&
-          state.explanation.blockers === undefined ? (
-            <span>It shares no word with the last song.</span>
-          ) : null}
-          {onOverride !== undefined ? (
-            <button
-              type="button"
-              onClick={onOverride}
-              // 44px minimum: used one-handed, in a car, to settle an argument.
-              className="border-paint text-paint mt-3 min-h-[44px] rounded-lg border px-4 py-2 text-base"
-            >
-              Allow it anyway
-            </button>
-          ) : null}
-        </Banner>
-      )
-    case 'error':
-      return (
-        <Banner tone="bad" onDismiss={onDismiss}>
-          <span>{state.message}</span>
-        </Banner>
-      )
-  }
-}
-
-function Banner({
-  tone,
-  children,
-  onDismiss,
-}: {
-  tone: 'quiet' | 'good' | 'bad' | 'warn'
-  children: React.ReactNode
-  onDismiss?: () => void
-}): React.JSX.Element {
-  const border = {
-    quiet: 'border-dusk-line',
-    good: 'border-verge',
-    bad: 'border-brake',
-    warn: 'border-sodium',
-  }[tone]
-
-  return (
-    <div
-      className={`bg-dusk-raised mx-4 mb-4 flex items-start gap-3 rounded-lg border ${border} px-4 py-3`}
-      role="status"
-    >
-      <div className="text-paint-dim flex-1 text-sm leading-snug">{children}</div>
-      {onDismiss !== undefined ? (
-        <button type="button" onClick={onDismiss} className="text-paint-dim -my-2 px-2 text-base">
-          Close
-        </button>
-      ) : null}
-    </div>
-  )
 }

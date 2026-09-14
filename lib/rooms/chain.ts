@@ -116,6 +116,30 @@ export type AppendPick = {
   wasOverride: boolean
   queuedToSpotify: boolean
   clientNonce: string
+  /**
+   * The seat the turn must *still* be pointing at for this pick to count.
+   *
+   * Set by anyone who was allowed to pick because of whose turn it is, and
+   * left null by anyone who was allowed regardless -- the host, an expired
+   * timer, a game that has not started. Checked under the room lock, so two
+   * people racing to type for the driver cannot both land a song on one turn.
+   */
+  requireTurnAt?: string | null
+}
+
+/**
+ * Somebody else's pick took the turn this one was judged against.
+ *
+ * Thrown from inside the transaction so the insert rolls back with it. The
+ * alternative -- letting both land -- puts two songs in the chain for one
+ * turn and skips whoever was next, which is exactly what the race between
+ * two passengers typing for the driver would produce.
+ */
+export class TurnMovedError extends Error {
+  constructor() {
+    super('That turn has already been taken')
+    this.name = 'TurnMovedError'
+  }
 }
 
 export type AppendResult = {
@@ -140,6 +164,28 @@ export async function appendPick(pick: AppendPick): Promise<AppendResult> {
   return transaction(async (client) => {
     // Serialise picks within a room so two submits cannot claim one position.
     await client.query('select id from rooms where id = $1 for update', [pick.roomId])
+
+    /*
+      The replay check comes first, and specifically before the turn guard.
+
+      A retry of a pick that already landed is not a lost race -- the turn
+      moved on *because* this very pick landed. Judging it against the turn
+      would reject the one case the whole idempotency design exists to
+      survive, so answer it from the chain, as the route does.
+    */
+    const { rows: replayed } = await client.query<{ id: string }>(
+      'select id from chain_entries where room_id = $1 and client_nonce = $2',
+      [pick.roomId, pick.clientNonce],
+    )
+    const isReplay = replayed.length > 0
+
+    if (!isReplay && pick.requireTurnAt !== undefined && pick.requireTurnAt !== null) {
+      const { rows: room } = await client.query<{ current_seat_id: string | null }>(
+        'select current_seat_id from rooms where id = $1',
+        [pick.roomId],
+      )
+      if ((room[0]?.current_seat_id ?? null) !== pick.requireTurnAt) throw new TurnMovedError()
+    }
 
     const { rows: inserted } = await client.query<{ id: string }>(
       `insert into chain_entries (
@@ -241,6 +287,25 @@ export async function removeLastEntry(roomId: string): Promise<StoredEntry | nul
 
     return toStoredEntry(row)
   })
+}
+
+/**
+ * Record that Spotify accepted this song.
+ *
+ * Written after the queue call rather than guessed before it, so the chain
+ * never claims a song is queued when it is not.
+ */
+export async function markQueued(entryId: string): Promise<StoredEntry | null> {
+  const row = await queryOne<EntryRow>(
+    `with updated as (
+       update chain_entries set queued_to_spotify = true where id = $1 returning *
+     )
+     select ${ENTRY_COLUMNS}
+     from updated e
+     left join seats s on s.id = e.seat_id`,
+    [entryId],
+  )
+  return row === null ? null : toStoredEntry(row)
 }
 
 /** Total unplayed milliseconds and count: the queue runway. */

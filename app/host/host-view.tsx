@@ -3,10 +3,13 @@
 import { useMemo, useState } from 'react'
 import { ChainRoute } from '@/components/chain-route'
 import { RoomChrome } from '@/components/room-chrome'
+import { SubmitBanner } from '@/components/submit-banner'
 import type { RoomState } from '@/lib/api/room-state'
+import { useSubmit } from '@/lib/player/use-submit'
 import { useRoom } from '@/lib/realtime/use-room'
 import { usePlaybackPoll } from '@/lib/host/use-playback-poll'
 import { toRulesHistory } from '@/lib/rooms/entry'
+import { turnView } from '@/lib/rooms/whose-turn'
 import type { AppTrack } from '@/lib/spotify'
 import { SongSearch } from '@/app/room/[code]/song-search'
 import { ChainExport } from './chain-export'
@@ -20,6 +23,10 @@ import { SeatOrder } from './seat-order'
  * It does three jobs in order of when they matter: get people in, choose the
  * first song, then run the game. Sections drop away as they are done, so the
  * screen does not accumulate clutter over a two-hour drive.
+ *
+ * It is also a player's screen. Hosting means owning the music, not sitting
+ * the game out -- the host is usually a passenger, and the driver is usually
+ * somebody else -- so this phone searches and picks like any other.
  */
 export function HostView({
   initial,
@@ -29,6 +36,7 @@ export function HostView({
   joinPanel: React.ReactNode
 }): React.JSX.Element {
   const { state, connection, refresh } = useRoom(initial)
+  const { state: submitState, submit, override, dismiss } = useSubmit(state.room.id)
   const [seeding, setSeeding] = useState(false)
   const [seedError, setSeedError] = useState<string | null>(null)
 
@@ -42,7 +50,9 @@ export function HostView({
 
   const history = useMemo(() => toRulesHistory(state.chain), [state.chain])
   const needsSeed = state.chain.length === 0
-  const currentSeat = state.seats.find((seat) => seat.id === state.turn.currentSeatId) ?? null
+  const previous = state.chain[state.chain.length - 1] ?? null
+  const view = turnView(state)
+  const yourMove = view.kind === 'yours' || view.kind === 'for-them'
 
   const setSeed = async (track: AppTrack): Promise<void> => {
     setSeeding(true)
@@ -113,6 +123,10 @@ export function HostView({
             roomId={state.room.id}
             seats={state.seats}
             currentSeatId={state.turn.currentSeatId}
+            youSeatId={state.you.seatId}
+            onChanged={() => {
+              void refresh()
+            }}
           />
         </section>
 
@@ -139,11 +153,46 @@ export function HostView({
           </section>
         ) : (
           <section className="px-4 pt-7">
-            <h2 className="font-display text-paint text-call uppercase">
-              {currentSeat === null ? 'Waiting for players' : `${currentSeat.name} is picking`}
-            </h2>
+            {view.kind === 'yours' ? (
+              <h2 className="font-display text-sodium text-call turn-arrives uppercase">
+                Your turn
+              </h2>
+            ) : view.kind === 'for-them' ? (
+              <h2 className="font-display text-sodium text-call turn-arrives uppercase">
+                Pick for {view.seat.name}
+              </h2>
+            ) : (
+              <h2 className="font-display text-paint text-call uppercase">
+                {view.kind === 'nobody' ? 'Waiting for players' : `${view.seat.name} is picking`}
+              </h2>
+            )}
+
+            {yourMove ? (
+              <>
+                <p className="text-paint-dim mt-1 mb-3 text-base">
+                  {view.kind === 'for-them'
+                    ? `No phone in that seat. Type what ${view.seat.name} says — the song is still theirs.`
+                    : `Find a song sharing a word with ${previous?.track.title ?? ''}`}
+                </p>
+                <SongSearch
+                  previous={previous}
+                  history={history}
+                  settings={state.room.settings}
+                  onPick={(track) => {
+                    submit(track, view.kind === 'for-them' ? { forSeatId: view.seat.id } : undefined)
+                  }}
+                  disabled={submitState.status === 'sending'}
+                />
+              </>
+            ) : null}
           </section>
         )}
+
+        {submitState.status !== 'idle' ? (
+          <div className="pt-4">
+            <SubmitBanner state={submitState} onDismiss={dismiss} onOverride={override} />
+          </div>
+        ) : null}
 
         {playback.stalled ? (
           <section className="px-4 pt-5">
@@ -185,7 +234,7 @@ export function HostView({
             roomId={state.room.id}
             status={state.room.status}
             canUndo={state.chain.length > 0}
-            currentSeatName={currentSeat?.name ?? null}
+            currentSeatName={view.kind === 'nobody' ? null : view.seat.name}
             onDone={() => {
               void refresh()
             }}

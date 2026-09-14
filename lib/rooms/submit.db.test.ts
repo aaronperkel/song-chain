@@ -86,7 +86,7 @@ describe('playing the chain', () => {
     const outcome = await play('Smells Like Teen Spirit', { artist: 'Nirvana' })
 
     expect(outcome.ok).toBe(false)
-    if (outcome.ok) return
+    if (outcome.ok || outcome.reason !== 'rejected') return
     expect(outcome.result).toEqual({ valid: false, reason: 'no-shared-word' })
     expect(outcome.explanation.sharedWords).toEqual([])
     // Nothing was written.
@@ -98,7 +98,7 @@ describe('playing the chain', () => {
     const outcome = await play('The Chain', { artist: 'Fleetwood Mac' })
 
     expect(outcome.ok).toBe(false)
-    if (outcome.ok) return
+    if (outcome.ok || outcome.reason !== 'rejected') return
     expect(outcome.result).toEqual({ valid: false, reason: 'stopword-only' })
     expect(outcome.explanation.sharedWords[0]?.why).toContain('stopword')
   })
@@ -117,7 +117,7 @@ describe('playing the chain', () => {
     const outcome = await play('Submarine Dreams', { artist: 'Yellow Days' })
 
     expect(outcome.ok).toBe(false)
-    if (outcome.ok) return
+    if (outcome.ok || outcome.reason !== 'rejected') return
     expect(outcome.result).toEqual({ valid: false, reason: 'artist-cooldown' })
     expect(outcome.explanation.blockers?.[0]?.kind).toBe('artist-cooldown')
   })
@@ -128,7 +128,7 @@ describe('playing the chain', () => {
     const outcome = await play('Yellow Submarine - Remastered 2009', { artist: 'The Beatles' })
 
     expect(outcome.ok).toBe(false)
-    if (outcome.ok) return
+    if (outcome.ok || outcome.reason !== 'rejected') return
     expect(outcome.result).toEqual({ valid: false, reason: 'duplicate-song' })
   })
 

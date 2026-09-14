@@ -19,6 +19,7 @@ Steps 1-5 are done, verified and pushed, and production is live. The game is pla
 | 4 | Rooms, codes, seats, turns, realtime | done — 290 hermetic + 58 db tests, full HTTP walkthrough |
 | — | Deploy to production | done — live, redirect URI registered |
 | 5 | Runway, settings, host controls, manual mode | done — 354 hermetic + 80 db tests |
+| — | Everyone in the car plays: the host, and the driver | done — 375 hermetic + 92 db tests |
 | 6 | Polish | **next** |
 
 ## Production
@@ -84,6 +85,40 @@ time and so cannot complete Spotify auth; only production works.
 Verified against production with a real room: settings merge and reject bad input, host actions
 are 403 without the cookie, pause blocks picks with 409, end clears the turn and is final.
 
+## Everyone in the car plays
+
+Two people were locked out of their own game, and both are in the front seats.
+
+- **The host plays too.** Hosting means owning the music, not sitting the game out --
+  the host is usually a passenger, and the driver is usually somebody else. "Play too"
+  on the host screen takes a seat on that phone (`{action:'add', hasPhone:true}` on the
+  seats route, which sets the seat cookie), and the host screen then searches and picks
+  like any other. It is idempotent: a double-tap does not put the host in the order
+  twice. The host page now reads `currentSeatId` *before* building the room state --
+  it used to patch `you.seatId` in afterwards, which left `you.isYourTurn` permanently
+  false for a host who held a seat.
+- **The driver plays by proxy.** `seats.has_phone` (migration 0005) says whether a
+  device holds the seat. A seat with `has_phone = false` is a real seat in the turn
+  order that nobody can see; when its turn comes, every seated phone in the room gets
+  the search box, the driver says the song, and whoever types it first lands it --
+  credited to the driver's seat, not to the typist. `POST picks` takes `forSeatId`
+  for this.
+
+The flag is deliberately **not** a token operation. Turning it off leaves the seat's
+secret alone, so a phone back from a dead battery still holds its seat and turning it
+on again is a plain flip with nothing to read out. It answers one question: may
+somebody else pick for this seat. `passSeat` sets it true, since a device now holds it.
+
+Open to anyone seated rather than host-only, because "having someone else queue it" is
+whoever has both hands free, not necessarily the person hosting. Spectators are refused
+by `authorizePick` and never shown the box: a search that always ends in a refusal is
+worse than no search.
+
+`lib/rooms/picking.ts` (`authorizePick`, server) and `lib/rooms/whose-turn.ts`
+(`turnView`, client-safe, type-only imports) hold the two halves, both pure and both
+tested — the questions they answer are the ones people argue about in a car, so they
+are tests rather than things you find out by driving somewhere.
+
 ## Step 6
 
 Mobile-first pass (44px+ targets, one-handed), PWA manifest, `navigator.wakeLock` on the host
@@ -124,6 +159,22 @@ npm run build     # not while `next dev` is running (see iCloud below)
   undefined. `crypto.getRandomValues` is fine. This shipped as a dead Add button; see
   `lib/player/nonce.ts`. Read the dev server log before concluding anything about a dead
   button — the stack trace was sitting in it.
+- **Checking whose turn it is in the route is not enough.** Two passengers typing for
+  the driver is the *designed* interaction, so the window between the route's `readTurn`
+  and the insert is wide open — both picks were judged against the same pointer and both
+  landed, giving the driver two songs in a row and skipping whoever was next. Verified
+  with two concurrent requests against the real server. The check has to happen under
+  the same room lock as the insert: `authorizePick` returns `requireTurnAt` (null for a
+  host, an expired timer, or a game with no turn yet — picks that relied on nothing are
+  held to nothing), `appendPick` re-checks it inside its transaction and throws
+  `TurnMovedError`, and the loser gets a 409. The replay check runs *before* that guard
+  for the same reason it runs first in the route.
+- **Queue to Spotify after recording, not before.** Was the other way round so the chain
+  could not claim a song was queued before Spotify agreed. It now inserts with
+  `queued_to_spotify = false` and flips it with `markQueued` once Spotify accepts, which
+  keeps that property *and* means the loser of a race is turned away before a song they
+  get no credit for is already playing in the car. It also stopped a concurrent replay
+  queueing the same song twice.
 - **Idempotency before authorization.** In `app/api/rooms/[id]/picks/route.ts` the
   `client_nonce` replay check must run *before* the seat and turn checks. A retry after a
   lost response is not out of turn; the turn moved on *because* the pick landed. Dead cell
