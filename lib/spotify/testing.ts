@@ -1,4 +1,4 @@
-import { expect, vi } from 'vitest'
+import { expect, type vi } from 'vitest'
 import type { SpotifyTrack } from './types'
 
 /** A Spotify search payload, in the shape the API actually returns. */
