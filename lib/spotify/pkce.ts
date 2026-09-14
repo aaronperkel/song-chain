@@ -10,6 +10,20 @@ export const HOST_SCOPES = [
   'user-modify-playback-state',
   'user-read-playback-state',
   'user-read-currently-playing',
+  /**
+   * Not in the original plan, and needed anyway.
+   *
+   * Manual mode is supposed to be chosen up front from `GET /v1/me` ->
+   * `product`, but Spotify omits `product` entirely unless the token carries
+   * `user-read-private`. Without it every host looks non-Premium and silently
+   * lands in manual mode -- confirmed against the live API, which returned a
+   * profile with `product: null` for a Premium account.
+   *
+   * The alternative was discovering Premium by attempting a queue write and
+   * reading a 403, which is exactly the submit-time failure that detecting it
+   * at auth is meant to avoid.
+   */
+  'user-read-private',
 ] as const
 
 const AUTHORIZE_URL = 'https://accounts.spotify.com/authorize'

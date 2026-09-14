@@ -64,10 +64,14 @@ describe('authorize URL', () => {
     expect(params.get('client_id')).toBe('client-id')
   })
 
-  it('requests exactly the playback scopes the game needs', () => {
+  it('requests exactly the scopes the game needs', () => {
     expect(build().searchParams.get('scope')).toBe(
-      'user-modify-playback-state user-read-playback-state user-read-currently-playing',
+      'user-modify-playback-state user-read-playback-state user-read-currently-playing ' +
+        'user-read-private',
     )
+    // user-read-private is what makes `product` present on /v1/me, and
+    // `product` is what chooses live or manual mode.
+    expect(HOST_SCOPES).toContain('user-read-private')
     // No playlist scope yet: that is only asked for at export time, in step 5.
     expect(HOST_SCOPES).not.toContain('playlist-modify-private')
   })

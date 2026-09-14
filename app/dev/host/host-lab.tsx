@@ -9,16 +9,28 @@ import type { AppTrack } from '@/lib/spotify'
  * Deliberately ugly, like /dev/search. The real host screen is step 4's job;
  * this exists to prove the auth and queue path end to end.
  */
-type Room = { id: string; code: string; mode: string; status: string }
+export type LabRoom = {
+  id: string
+  code: string
+  mode: string
+  status: string
+  hasHostToken: boolean
+  hostDisplayName: string | null
+  hostProduct: string | null
+}
 
 export function HostLab({
+  initialRoom,
   authOutcome,
   authDetail,
 }: {
+  initialRoom: LabRoom | null
   authOutcome: string | null
   authDetail: string | null
 }): React.JSX.Element {
-  const [room, setRoom] = useState<Room | null>(null)
+  // Seeded from the host cookie on the server, so returning from Spotify does
+  // not leave the page without a room.
+  const [room, setRoom] = useState<LabRoom | null>(initialRoom)
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState<string[]>([])
   const [query, setQuery] = useState('')
@@ -37,8 +49,8 @@ export function HostLab({
         say(`room create failed: ${JSON.stringify(body)}`)
         return
       }
-      const created = body as Room
-      setRoom(created)
+      const created = body as LabRoom
+      setRoom({ ...created, hasHostToken: false, hostDisplayName: null, hostProduct: null })
       say(`room ${created.code} created (${created.id})`)
     } finally {
       setBusy(false)
@@ -87,6 +99,15 @@ export function HostLab({
         Step 3 check: PKCE host auth and one real queue write.
       </p>
 
+      {room?.mode === 'manual' && room.hasHostToken ? (
+        <div style={{ border: '2px solid #a60', padding: 8, margin: '8px 0', fontSize: 12 }}>
+          This room is in <strong>manual mode</strong>, so nothing is pushed to Spotify. That is
+          chosen from the <code>product</code> field of your Spotify profile
+          {room.hostProduct === null ? ', which came back empty' : `, which said "${room.hostProduct}"`}
+          . Reconnect to re-read it.
+        </div>
+      ) : null}
+
       {authOutcome !== null ? (
         <div
           style={{
@@ -109,17 +130,29 @@ export function HostLab({
           {room !== null ? (
             <span>
               {' '}
-              code <strong>{room.code}</strong>, mode <strong>{room.mode}</strong>
+              code <strong>{room.code}</strong>, mode <strong>{room.mode}</strong>, status{' '}
+              {room.status}
             </span>
-          ) : null}
+          ) : (
+            <span style={{ color: '#666' }}> no room yet</span>
+          )}
         </li>
         <li>
           <a href="/api/auth/spotify/login">
             <button type="button" disabled={room === null}>
-              connect spotify
+              {room?.hasHostToken === true ? 'reconnect spotify' : 'connect spotify'}
             </button>
           </a>{' '}
-          <span style={{ color: '#666' }}>(needs a room first)</span>
+          {room === null ? (
+            <span style={{ color: '#666' }}>(create a room first)</span>
+          ) : room.hasHostToken ? (
+            <span style={{ color: '#070' }}>
+              connected as {room.hostDisplayName ?? 'unknown'} (product:{' '}
+              {room.hostProduct ?? 'not reported'})
+            </span>
+          ) : (
+            <span style={{ color: '#666' }}>(not connected)</span>
+          )}
         </li>
         <li>
           <input
