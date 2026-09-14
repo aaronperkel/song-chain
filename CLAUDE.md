@@ -17,7 +17,7 @@ Steps 1-4 of the build order are done, verified and pushed. The game is playable
 | 2 | Search proxy + audit page | done — verified against 453 real Spotify titles |
 | 3 | Host PKCE auth + queue write | done — verified with live `POST /v1/me/player/queue` |
 | 4 | Rooms, codes, seats, turns, realtime | done — 290 hermetic + 58 db tests, full HTTP walkthrough |
-| — | Deploy to production | done — live, one manual Spotify step left, see below |
+| — | Deploy to production | done — live, redirect URI registered |
 | 5 | Runway, settings, host controls, manual mode | **next** |
 | 6 | Polish | not started |
 
@@ -42,15 +42,13 @@ Verified in production: room creation works, and `/api/auth/spotify/login` redir
 `redirect_uri=https://song-chain-lemon.vercel.app/api/auth/spotify/callback` and the
 `user-read-private` scope present.
 
-### Blocked on Aaron — one manual step
+`https://song-chain-lemon.vercel.app/api/auth/spotify/callback` is registered in the Spotify
+dashboard alongside the local `http://127.0.0.1:3000/api/auth/spotify/callback` entry, and
+Spotify was confirmed to accept it (the authorize URL renders the login page rather than
+`INVALID_CLIENT: Invalid redirect URI`).
 
-Add `https://song-chain-lemon.vercel.app/api/auth/spotify/callback` to the Spotify dashboard's
-redirect URIs (developer.spotify.com/dashboard -> the app -> Settings). Keep the existing
-`http://127.0.0.1:3000/api/auth/spotify/callback` entry for local work. Until then the host
-cannot connect Spotify in production and every room stays `mode=manual`.
-
-Then verify on a phone: open `/host`, connect Spotify, confirm the room reports `mode=live`,
-queue one track for real.
+Still unconfirmed, because it needs a real Premium login on a phone: open `/host`, connect
+Spotify, check the room reports `mode=live`, queue one track for real.
 
 Dev and production share one Supabase database, so the migrations in `supabase/migrations/` are
 already applied — no separate production migration. Preview deployments get a fresh URL each
