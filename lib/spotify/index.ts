@@ -10,7 +10,9 @@ export { hasSpotifyCredentials, spotifyCredentials } from './env'
 export { toAppTrack } from './types'
 export {
   exchangeCode,
+  fetchCurrentlyPlaying,
   fetchHostProfile,
+  fetchHostQueue,
   getHostAccessToken,
   queueTrack,
   resetHostRefreshCache,
@@ -20,5 +22,5 @@ export { authorizeUrl, createPkcePair, createState, redirectUri, HOST_SCOPES } f
 export type { SpotifyErrorKind } from './errors'
 export type { AppTrack, SpotifyTrack, SpotifyTokenResponse } from './types'
 export type { SearchOptions } from './search'
-export type { HostProfile, HostTokens } from './host'
+export type { HostPlayback, HostProfile, HostQueue, HostTokens } from './host'
 export type { PkcePair } from './pkce'

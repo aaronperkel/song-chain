@@ -20,6 +20,7 @@ import { z } from 'zod'
 const TOKEN_URL = 'https://accounts.spotify.com/api/token'
 const ME_URL = 'https://api.spotify.com/v1/me'
 const QUEUE_URL = 'https://api.spotify.com/v1/me/player/queue'
+const CURRENTLY_PLAYING_URL = 'https://api.spotify.com/v1/me/player/currently-playing'
 
 /** Refresh this far ahead of expiry so an in-flight request cannot age out. */
 const EXPIRY_MARGIN_MS = 120_000
@@ -194,6 +195,121 @@ export async function queueTrack(roomId: string, trackUri: string): Promise<void
     })
   }
   throw error
+}
+
+/**
+ * An item in a playback response.
+ *
+ * `id` is nullable because local files and some relinked tracks carry none,
+ * and `type` matters because the host's Spotify can be playing a podcast
+ * episode, which is not a chain entry and must not advance the runway.
+ */
+const PlayableSchema = z.object({
+  id: z.string().nullish(),
+  type: z.string().nullish(),
+})
+
+function playableTrackId(item: { id?: string | null; type?: string | null } | null | undefined): string | null {
+  if (item === null || item === undefined) return null
+  if (item.type !== undefined && item.type !== null && item.type !== 'track') return null
+  return item.id ?? null
+}
+
+const CurrentlyPlayingSchema = z.object({
+  is_playing: z.boolean().nullish(),
+  progress_ms: z.number().nullish(),
+  item: PlayableSchema.nullish(),
+})
+
+export type HostPlayback = {
+  /** Null when idle, or when what is playing is not a track. */
+  trackId: string | null
+  progressMs: number
+  isPlaying: boolean
+}
+
+/**
+ * What the host is playing right now.
+ *
+ * Spotify answers `204 No Content` when playback is idle. That is not an
+ * error -- it is the normal state between songs and before anyone presses
+ * play -- so it returns an idle reading rather than throwing. A polling loop
+ * that threw every ten seconds on an idle player would be unusable.
+ */
+export async function fetchCurrentlyPlaying(roomId: string): Promise<HostPlayback> {
+  const response = await getFromSpotify(roomId, CURRENTLY_PLAYING_URL, 'Currently playing')
+
+  // 204 is idle; 202 means the device is still waking up and has no state yet.
+  if (response.status === 204 || response.status === 202) {
+    return { trackId: null, progressMs: 0, isPlaying: false }
+  }
+  if (!response.ok) throw await toSpotifyError(response, 'Currently playing')
+
+  const parsed = CurrentlyPlayingSchema.safeParse(await readJson(response, 'Currently playing'))
+  if (!parsed.success) {
+    throw new SpotifyError('bad-response', 'Unrecognised currently-playing response')
+  }
+
+  return {
+    trackId: playableTrackId(parsed.data.item),
+    progressMs: parsed.data.progress_ms ?? 0,
+    isPlaying: parsed.data.is_playing ?? false,
+  }
+}
+
+const QueueSchema = z.object({
+  currently_playing: PlayableSchema.nullish(),
+  queue: z.array(PlayableSchema).nullish(),
+})
+
+export type HostQueue = {
+  currentTrackId: string | null
+  /** Track ids Spotify still has queued ahead, in order. */
+  trackIds: string[]
+}
+
+/**
+ * What Spotify still has queued for the host.
+ *
+ * Used to reconcile: `currently-playing` alone cannot tell us about a song
+ * that was skipped between two polls, because by the next poll it is simply
+ * gone. Comparing against the real queue catches that drift.
+ */
+export async function fetchHostQueue(roomId: string): Promise<HostQueue> {
+  const response = await getFromSpotify(roomId, QUEUE_URL, 'Host queue')
+
+  if (response.status === 204 || response.status === 202) {
+    return { currentTrackId: null, trackIds: [] }
+  }
+  if (!response.ok) throw await toSpotifyError(response, 'Host queue')
+
+  const parsed = QueueSchema.safeParse(await readJson(response, 'Host queue'))
+  if (!parsed.success) throw new SpotifyError('bad-response', 'Unrecognised queue response')
+
+  const queued: string[] = []
+  for (const item of parsed.data.queue ?? []) {
+    const id = playableTrackId(item)
+    if (id !== null) queued.push(id)
+  }
+
+  return {
+    currentTrackId: playableTrackId(parsed.data.currently_playing),
+    trackIds: queued,
+  }
+}
+
+async function getFromSpotify(roomId: string, url: string, context: string): Promise<Response> {
+  const accessToken = await getHostAccessToken(roomId)
+  try {
+    return await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+    })
+  } catch (cause) {
+    // Polled every ten seconds from a moving car, so a dropped connection is
+    // routine. Give it a kind the caller can ignore rather than a raw throw.
+    throw new SpotifyError('network', `Could not reach Spotify (${context})`, { cause })
+  }
 }
 
 async function postForm(url: string, body: Record<string, string>): Promise<Response> {

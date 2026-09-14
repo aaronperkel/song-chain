@@ -5,6 +5,7 @@ import { ChainRoute } from '@/components/chain-route'
 import { RoomChrome } from '@/components/room-chrome'
 import type { RoomState } from '@/lib/api/room-state'
 import { useRoom } from '@/lib/realtime/use-room'
+import { usePlaybackPoll } from '@/lib/host/use-playback-poll'
 import { toRulesHistory } from '@/lib/rooms/entry'
 import type { AppTrack } from '@/lib/spotify'
 import { SongSearch } from '@/app/room/[code]/song-search'
@@ -24,9 +25,17 @@ export function HostView({
   initial: RoomState
   joinPanel: React.ReactNode
 }): React.JSX.Element {
-  const { state, connection } = useRoom(initial)
+  const { state, connection, refresh } = useRoom(initial)
   const [seeding, setSeeding] = useState(false)
   const [seedError, setSeedError] = useState<string | null>(null)
+
+  // Only the host follows Spotify, and only when there is something to
+  // follow. The server broadcasts what it learns to everyone else.
+  const playback = usePlaybackPoll({
+    roomId: state.room.id,
+    enabled: state.room.hostConnected && state.room.mode === 'live',
+    onAdvance: refresh,
+  })
 
   const history = useMemo(() => toRulesHistory(state.chain), [state.chain])
   const needsSeed = state.chain.length === 0
@@ -133,11 +142,19 @@ export function HostView({
           </section>
         )}
 
+        {playback.stalled ? (
+          <section className="px-4 pt-5">
+            <p className="text-paint-dim text-sm" role="status">
+              Not following Spotify right now — the queue total may be behind.
+            </p>
+          </section>
+        ) : null}
+
         <section className="pt-7">
           <h2 className="text-paint-dim border-dusk-line mx-4 border-t px-0 pt-4 pb-2 text-base">
             The chain so far
           </h2>
-          <ChainRoute chain={state.chain} />
+          <ChainRoute chain={state.chain} nowPlayingId={playback.nowPlayingEntryId} />
         </section>
 
         {/*

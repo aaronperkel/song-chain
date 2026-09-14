@@ -25,9 +25,14 @@ vi.mock('@/lib/rooms/repo', () => ({
   saveRefreshedTokens: (roomId: string, tokens: never) => saveRefreshedTokens(roomId, tokens),
 }))
 
-const { getHostAccessToken, queueTrack, fetchHostProfile, resetHostRefreshCache } = await import(
-  './host'
-)
+const {
+  getHostAccessToken,
+  queueTrack,
+  fetchHostProfile,
+  fetchCurrentlyPlaying,
+  fetchHostQueue,
+  resetHostRefreshCache,
+} = await import('./host')
 
 const KEY = randomBytes(32).toString('base64')
 const fetchMock = vi.fn<typeof fetch>()
@@ -288,6 +293,157 @@ describe('queueTrack', () => {
     fetchMock.mockResolvedValueOnce(json({ error: { status: 403 } }, { status: 403 }))
     await expect(queueTrack('room-1', 'spotify:track:x')).rejects.toMatchObject({
       kind: 'forbidden',
+    })
+  })
+})
+
+/**
+ * The playback reads run every ten seconds from a phone in a moving car, so
+ * their edge cases are not edge cases -- idle players and dropped connections
+ * are the normal state of this app, and neither may throw its way onto the
+ * host's screen.
+ */
+describe('fetchCurrentlyPlaying', () => {
+  const validToken = (): void => {
+    findHostTokens.mockResolvedValue({
+      refreshTokenSealed: seal('refresh-token'),
+      accessTokenSealed: seal('good-access'),
+      accessTokenExpiresAt: inFuture(600_000),
+    })
+  }
+
+  beforeEach(validToken)
+
+  it('reads the playing track, its progress and whether it is running', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json({ is_playing: true, progress_ms: 42_000, item: { id: 'track-1', type: 'track' } }),
+    )
+
+    await expect(fetchCurrentlyPlaying('room-1')).resolves.toEqual({
+      trackId: 'track-1',
+      progressMs: 42_000,
+      isPlaying: true,
+    })
+  })
+
+  it('treats 204 as idle rather than an error', async () => {
+    // Spotify sends 204 with no body whenever nothing is playing. A polling
+    // loop that threw on it would throw between every pair of songs.
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await expect(fetchCurrentlyPlaying('room-1')).resolves.toEqual({
+      trackId: null,
+      progressMs: 0,
+      isPlaying: false,
+    })
+  })
+
+  it('treats 202 as idle, for a device that is still waking up', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 202 }))
+
+    await expect(fetchCurrentlyPlaying('room-1')).resolves.toEqual({
+      trackId: null,
+      progressMs: 0,
+      isPlaying: false,
+    })
+  })
+
+  it('ignores a podcast episode, which is not a chain entry', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json({ is_playing: true, progress_ms: 10, item: { id: 'ep-1', type: 'episode' } }),
+    )
+
+    const result = await fetchCurrentlyPlaying('room-1')
+
+    expect(result.trackId).toBeNull()
+    // Still playing something, just nothing of ours.
+    expect(result.isPlaying).toBe(true)
+  })
+
+  it('tolerates a missing item and absent progress', async () => {
+    fetchMock.mockResolvedValueOnce(json({ is_playing: false }))
+
+    await expect(fetchCurrentlyPlaying('room-1')).resolves.toEqual({
+      trackId: null,
+      progressMs: 0,
+      isPlaying: false,
+    })
+  })
+
+  it('reports a dropped connection as a network error, not a crash', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    await expect(fetchCurrentlyPlaying('room-1')).rejects.toMatchObject({ kind: 'network' })
+  })
+
+  it('raises the Spotify error for a real failure', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('nope', { status: 403 }))
+
+    await expect(fetchCurrentlyPlaying('room-1')).rejects.toMatchObject({ kind: 'forbidden' })
+  })
+})
+
+describe('fetchHostQueue', () => {
+  beforeEach(() => {
+    findHostTokens.mockResolvedValue({
+      refreshTokenSealed: seal('refresh-token'),
+      accessTokenSealed: seal('good-access'),
+      accessTokenExpiresAt: inFuture(600_000),
+    })
+  })
+
+  it('reads what is playing and what is still queued, in order', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json({
+        currently_playing: { id: 'now', type: 'track' },
+        queue: [
+          { id: 'next-1', type: 'track' },
+          { id: 'next-2', type: 'track' },
+        ],
+      }),
+    )
+
+    await expect(fetchHostQueue('room-1')).resolves.toEqual({
+      currentTrackId: 'now',
+      trackIds: ['next-1', 'next-2'],
+    })
+  })
+
+  it('drops non-tracks and ids Spotify omits', async () => {
+    // Local files carry no id; a queued episode is not a chain entry. Keeping
+    // either would corrupt the position the runway is measured from.
+    fetchMock.mockResolvedValueOnce(
+      json({
+        currently_playing: null,
+        queue: [
+          { id: 'keep', type: 'track' },
+          { id: 'ep', type: 'episode' },
+          { id: null, type: 'track' },
+        ],
+      }),
+    )
+
+    await expect(fetchHostQueue('room-1')).resolves.toEqual({
+      currentTrackId: null,
+      trackIds: ['keep'],
+    })
+  })
+
+  it('handles an empty queue', async () => {
+    fetchMock.mockResolvedValueOnce(json({ currently_playing: null, queue: [] }))
+
+    await expect(fetchHostQueue('room-1')).resolves.toEqual({
+      currentTrackId: null,
+      trackIds: [],
+    })
+  })
+
+  it('treats 204 as nothing queued', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await expect(fetchHostQueue('room-1')).resolves.toEqual({
+      currentTrackId: null,
+      trackIds: [],
     })
   })
 })
