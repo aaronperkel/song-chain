@@ -92,9 +92,10 @@ function locateBoundary(entries: readonly PlaybackEntry[], reading: PlaybackRead
   const { nowPlayingTrackId, queuedTrackIds } = reading
 
   if (nowPlayingTrackId !== null) {
-    // Earliest *unplayed* match, not merely the earliest match: with
-    // `allowRepeatSongs` the same track can sit in the chain twice, and the
-    // one playing now is the one we have not passed yet.
+    // Earliest *unplayed* match, not merely the earliest match. A host
+    // override can put the same track in the chain twice, and the one playing
+    // now is the copy we have not passed yet -- matching the earlier one would
+    // rewind the runway over songs that already played.
     const index = entries.findIndex(
       (entry) => entry.playedAt === null && entry.trackId === nowPlayingTrackId,
     )

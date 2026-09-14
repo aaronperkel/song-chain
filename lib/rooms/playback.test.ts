@@ -78,9 +78,9 @@ describe('resolvePlayback', () => {
   })
 
   it('picks the earliest unplayed copy when a track repeats in the chain', () => {
-    // allowRepeatSongs lets the same song appear twice. The one playing now is
-    // the one we have not passed yet -- matching the first copy would rewind
-    // the runway and re-queue songs that already played.
+    // A host override can put the same song in the chain twice. The one
+    // playing now is the copy we have not passed yet -- matching the first
+    // would rewind the runway over songs that already played.
     const entries = chain(['e1', 'dup', true], ['e2', 't2'], ['e3', 'dup'], ['e4', 't4'])
 
     expect(resolvePlayback(entries, reading('dup'))).toEqual({

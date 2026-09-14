@@ -162,6 +162,10 @@ export function apply(state: RoomState, event: RoomEvent): RoomState {
     }
     case 'room':
       return { ...state, room: { ...state.room, status: event.status, mode: event.mode } }
+    case 'settings':
+      // The chain is untouched: every existing link keeps the word it was
+      // actually matched on. New rules judge new picks only.
+      return { ...state, room: { ...state.room, settings: event.settings } }
   }
 }
 

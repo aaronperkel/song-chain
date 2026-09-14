@@ -9,6 +9,7 @@ import { usePlaybackPoll } from '@/lib/host/use-playback-poll'
 import { toRulesHistory } from '@/lib/rooms/entry'
 import type { AppTrack } from '@/lib/spotify'
 import { SongSearch } from '@/app/room/[code]/song-search'
+import { RoomSettings } from './room-settings'
 import { SeatOrder } from './seat-order'
 
 /**
@@ -155,6 +156,28 @@ export function HostView({
             The chain so far
           </h2>
           <ChainRoute chain={state.chain} nowPlayingId={playback.nowPlayingEntryId} />
+        </section>
+
+        {/*
+          Folded away by default. The rules matter most before the first song
+          and during an argument, and neither is often enough to spend the
+          top of a phone screen on for a two-hour drive.
+        */}
+        <section className="pt-7">
+          <details className="px-4">
+            <summary className="text-paint-dim cursor-pointer py-2 text-base">
+              House rules
+            </summary>
+            <div className="-mx-4 pt-3">
+              <RoomSettings
+                roomId={state.room.id}
+                settings={state.room.settings}
+                onApplied={() => {
+                  void refresh()
+                }}
+              />
+            </div>
+          </details>
         </section>
 
         {/*

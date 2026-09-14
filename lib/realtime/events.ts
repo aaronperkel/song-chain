@@ -1,3 +1,4 @@
+import type { RuleSettings } from '@/lib/rules'
 import type { StoredEntry } from '@/lib/rooms/chain'
 import type { Seat } from '@/lib/rooms/seats'
 import type { RoomMode, RoomStatus } from '@/lib/rooms/repo'
@@ -20,6 +21,7 @@ export type RoomEvent =
   | { type: 'turn'; turn: TurnState }
   | { type: 'playback'; playedEntryIds: string[]; runway: Runway; nowPlayingId: string | null }
   | { type: 'room'; status: RoomStatus; mode: RoomMode }
+  | { type: 'settings'; settings: RuleSettings }
 
 export type Runway = { ms: number; songs: number }
 

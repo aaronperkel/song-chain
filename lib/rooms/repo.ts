@@ -214,6 +214,32 @@ export async function setRoomMode(
   ])
 }
 
+/**
+ * Change the house rules mid-game.
+ *
+ * Merged into the stored JSON rather than replacing it, so a host toggling one
+ * switch cannot blank the other six, and two hosts on two phones editing
+ * different settings do not clobber each other.
+ *
+ * Applies to subsequent picks only. The chain keeps how each existing link was
+ * actually matched -- re-judging settled songs under new rules would invalidate
+ * picks people already made, which is the one thing a cooperative game must
+ * never do.
+ */
+export async function updateRoomSettings(
+  roomId: string,
+  patch: Partial<RuleSettings>,
+): Promise<RuleSettings | null> {
+  const row = await queryOne<{ settings: Partial<RuleSettings> }>(
+    `update rooms
+     set settings = coalesce(settings, '{}'::jsonb) || $2::jsonb
+     where id = $1
+     returning settings`,
+    [roomId, JSON.stringify(patch)],
+  )
+  return row === null ? null : withDefaults(row.settings)
+}
+
 export async function setRoomStatus(roomId: string, status: RoomStatus): Promise<void> {
   await query('update rooms set status = $2 where id = $1', [roomId, status])
 }
