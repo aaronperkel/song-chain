@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { randomToken } from '@/lib/player/nonce'
 import type { AppTrack } from '@/lib/spotify'
 import type { StoredEntry } from '@/lib/rooms/entry'
 import type { Explanation } from '@/lib/rules'
@@ -123,19 +124,28 @@ export function useSubmit(roomId: string): {
 
   const submit = useCallback(
     (track: AppTrack): void => {
-      const attempt: Pending = {
-        roomId,
-        // Stable across every retry of *this* pick, so repeats collapse into
-        // one entry however many times the phone sends them.
-        nonce: `${roomId}:${track.id}:${crypto.randomUUID()}`,
-        trackId: track.id,
-        title: track.title,
-        attempts: 0,
+      try {
+        const attempt: Pending = {
+          roomId,
+          // Stable across every retry of *this* pick, so repeats collapse into
+          // one entry however many times the phone sends them.
+          nonce: `${roomId}:${track.id}:${randomToken()}`,
+          trackId: track.id,
+          title: track.title,
+          attempts: 0,
+        }
+        writePending(attempt)
+        setPending(attempt)
+        setOutcome(null)
+        void send(attempt)
+      } catch (error) {
+        // Throwing here reads as a dead button, and a dead button is the one
+        // outcome this app must never produce. A `crypto.randomUUID` that is
+        // missing outside a secure context did exactly that on a guest phone.
+        // Whatever the next such gap turns out to be, say so on screen.
+        console.error('[submit] could not start', error)
+        setOutcome({ status: 'error', message: 'Could not send that pick. Try again.' })
       }
-      writePending(attempt)
-      setPending(attempt)
-      setOutcome(null)
-      void send(attempt)
     },
     [roomId, send],
   )
