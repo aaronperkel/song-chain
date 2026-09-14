@@ -96,7 +96,13 @@ export function RoomView({ initial }: { initial: RoomState }): React.JSX.Element
           <h2 className="text-paint-dim border-dusk-line mx-4 border-t pt-4 pb-2 text-base">
             The chain so far
           </h2>
-          <ChainRoute chain={state.chain} />
+          {/*
+            In a manual room nothing reaches Spotify's queue, so opening the
+            song yourself is the only way to hear it. A live room leaves the
+            links off: it is already playing, and a passenger tapping one
+            would hijack the car's music.
+          */}
+          <ChainRoute chain={state.chain} linkTracks={state.room.mode === 'manual'} />
         </section>
       </div>
     </div>

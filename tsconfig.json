@@ -40,7 +40,12 @@
     // up by the .next/types include above and break typecheck with duplicate
     // identifiers. Excluding the pattern is cheaper than a clean step that
     // races the sync.
-    "**/* [0-9].ts",
+    //
+    // It must be "?" and not "[0-9]": tsconfig globs support only *, ? and
+    // **/, so a character class is matched literally and silently excludes
+    // nothing. This was written as "[0-9]" and had never matched a file.
+    "**/* ?.ts",
+    "**/* ?.tsx",
     "**/* [0-9].tsx",
     "**/* [0-9].d.ts"
   ]

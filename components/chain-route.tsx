@@ -1,4 +1,5 @@
 import type { StoredEntry } from '@/lib/rooms/entry'
+import { trackWebLink } from '@/lib/rooms/export'
 
 /**
  * The chain, drawn as a route.
@@ -11,9 +12,17 @@ import type { StoredEntry } from '@/lib/rooms/entry'
 export function ChainRoute({
   chain,
   nowPlayingId,
+  linkTracks = false,
 }: {
   chain: readonly StoredEntry[]
   nowPlayingId?: string | null
+  /**
+   * Manual mode only. A manual room never reaches the queue API, so opening
+   * the song yourself is the only route from the chain to hearing it. Live
+   * rooms leave it off: the song is already queued, and tapping one would
+   * hijack the playback everyone is listening to.
+   */
+  linkTracks?: boolean
 }): React.JSX.Element {
   if (chain.length === 0) {
     return (
@@ -28,7 +37,12 @@ export function ChainRoute({
       {chain.map((entry, index) => (
         <li key={entry.id}>
           {index > 0 ? <Junction entry={entry} /> : null}
-          <Stop entry={entry} isFirst={index === 0} isNowPlaying={entry.id === nowPlayingId} />
+          <Stop
+            entry={entry}
+            isFirst={index === 0}
+            isNowPlaying={entry.id === nowPlayingId}
+            linked={linkTracks}
+          />
         </li>
       ))}
     </ol>
@@ -67,10 +81,12 @@ function Stop({
   entry,
   isFirst,
   isNowPlaying,
+  linked,
 }: {
   entry: StoredEntry
   isFirst: boolean
   isNowPlaying: boolean
+  linked: boolean
 }): React.JSX.Element {
   const played = entry.playedAt !== null
 
@@ -88,7 +104,23 @@ function Stop({
         aria-hidden
       />
       <div className={`min-w-0 pb-1 ${played && !isNowPlaying ? 'opacity-55' : ''}`}>
-        <p className="text-paint text-lg leading-tight font-medium">{entry.track.title}</p>
+        {linked ? (
+          <a
+            // The https URL rather than the spotify: URI: it opens the app
+            // where one is installed and the web player where none is, while
+            // a bare spotify: link silently does nothing on a phone without
+            // Spotify -- which in a manual-mode room is a real possibility.
+            href={trackWebLink(entry)}
+            target="_blank"
+            rel="noreferrer"
+            // 44px minimum, and the whole title is the target.
+            className="text-paint flex min-h-[44px] items-center text-lg leading-tight font-medium underline decoration-dotted underline-offset-4"
+          >
+            {entry.track.title}
+          </a>
+        ) : (
+          <p className="text-paint text-lg leading-tight font-medium">{entry.track.title}</p>
+        )}
         <p className="text-paint-dim truncate text-sm">
           {entry.track.artists.join(', ')}
           {isFirst ? ' — the start' : ''}

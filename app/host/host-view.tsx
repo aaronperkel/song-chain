@@ -9,6 +9,7 @@ import { usePlaybackPoll } from '@/lib/host/use-playback-poll'
 import { toRulesHistory } from '@/lib/rooms/entry'
 import type { AppTrack } from '@/lib/spotify'
 import { SongSearch } from '@/app/room/[code]/song-search'
+import { ChainExport } from './chain-export'
 import { HostControls } from './host-controls'
 import { RoomSettings } from './room-settings'
 import { SeatOrder } from './seat-order'
@@ -156,7 +157,15 @@ export function HostView({
           <h2 className="text-paint-dim border-dusk-line mx-4 border-t px-0 pt-4 pb-2 text-base">
             The chain so far
           </h2>
-          <ChainRoute chain={state.chain} nowPlayingId={playback.nowPlayingEntryId} />
+          <ChainRoute
+            chain={state.chain}
+            nowPlayingId={playback.nowPlayingEntryId}
+            linkTracks={state.room.mode === 'manual'}
+          />
+
+          <div className="pt-4">
+            <ChainExport chain={state.chain} code={state.room.code} />
+          </div>
         </section>
 
         {/*
