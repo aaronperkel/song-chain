@@ -26,13 +26,26 @@ const VERSION_JUNK: readonly JunkRule[] = [
   // `- Kaytranada Remix`, `(Dub)`
   { name: 'remix', test: /\b(remix(es)?|dub|vip|bootleg|rework|flip)$/ },
   // `- Live at Wembley`, `(Live)`, `- Live 1975`
-  { name: 'live', test: /^live\b|\blive (at|in|from|on)\b|\brecorded live\b/ },
+  // `^live` catches "Live at Wembley"; `\blive$` catches "Acoustic Live".
+  // "alive" is safe: there is no word boundary inside it.
+  { name: 'live', test: /^live\b|\blive$|\blive (at|in|from|on)\b|\brecorded live\b/ },
   // `(Deluxe Edition)`, `- Anniversary Edition`, `(Expanded)`
   {
     name: 'edition',
     test: /\b(deluxe|expanded|special|anniversary|legacy|collectors?|collector's|platinum|reissue|remaster)\b/,
   },
   { name: 'bonus-track', test: /\bbonus\s+track\b/ },
+  /**
+   * A recording date as a whole trailing segment, as in
+   * `(Sittin' On) The Dock of the Bay - Live At The Fillmore - July 2008`.
+   * Without this the right-to-left walk stops on the date and leaves the
+   * "Live At The Fillmore" segment in the title. Deliberately anchored to the
+   * entire segment, so a year inside a real title is untouched.
+   */
+  {
+    name: 'recording-date',
+    test: /^((january|february|march|april|may|june|july|august|september|october|november|december)\s+)?(19|20)\d{2}$|^\d{4}-\d{2}(-\d{2})?$/,
+  },
   { name: 'demo', test: /\bdemo\b/ },
   { name: 'take', test: /^(take|alternate|alternative|alt)\b.*$|^\d+(st|nd|rd|th)?\s+take$/ },
   { name: 'explicit-clean', test: /^(explicit|clean)(\s+version)?$/ },

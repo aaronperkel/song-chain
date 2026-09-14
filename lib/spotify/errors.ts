@@ -6,6 +6,7 @@
  * hit it. Callers surface it rather than retrying blindly.
  */
 export type SpotifyErrorKind =
+  | 'bad-request'
   | 'rate-limited'
   | 'unauthorized'
   | 'forbidden'
@@ -51,6 +52,11 @@ export async function toSpotifyError(response: Response, context: string): Promi
   const detail = body.length > 0 ? ` ${body.slice(0, 300)}` : ''
 
   switch (response.status) {
+    case 400:
+      // Spotify rejected *our* parameters. Never the player's fault.
+      return new SpotifyError('bad-request', `${context}: Spotify rejected the request.${detail}`, {
+        status: 400,
+      })
     case 401:
       return new SpotifyError('unauthorized', `${context}: token rejected.${detail}`, {
         status: 401,

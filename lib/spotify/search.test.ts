@@ -29,7 +29,7 @@ describe('searchTracks', () => {
     expect(url.origin + url.pathname).toBe('https://api.spotify.com/v1/search')
     expect(url.searchParams.get('q')).toBe('mr brightside')
     expect(url.searchParams.get('type')).toBe('track')
-    expect(url.searchParams.get('limit')).toBe('20')
+    expect(url.searchParams.get('limit')).toBe('10')
     expect(url.searchParams.get('market')).toBe('US')
 
     const init = fetchMock.mock.calls[1]?.[1]
@@ -98,10 +98,17 @@ describe('searchTracks', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('clamps the limit to what Spotify accepts', async () => {
+  it('clamps the limit to what Spotify actually accepts, not what it documents', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(searchPayload([])))
     await searchTracks('anything', { limit: 500 })
-    expect(calledUrl(fetchMock, 1).searchParams.get('limit')).toBe('50')
+    expect(calledUrl(fetchMock, 1).searchParams.get('limit')).toBe('10')
+  })
+
+  it('reports a 400 from Spotify as our own bad request', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: { status: 400, message: 'Invalid limit' } }, { status: 400 }),
+    )
+    await expect(searchTracks('anything')).rejects.toMatchObject({ kind: 'bad-request' })
   })
 
   it('passes a market through', async () => {

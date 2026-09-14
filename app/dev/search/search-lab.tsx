@@ -46,7 +46,7 @@ export function SearchLab(): React.JSX.Element {
       const controller = new AbortController()
       abortRef.current = controller
 
-      fetch(`/api/search?q=${encodeURIComponent(trimmed)}&limit=20`, {
+      fetch(`/api/search?q=${encodeURIComponent(trimmed)}&limit=10`, {
         signal: controller.signal,
       })
         .then(async (response) => {

@@ -4,8 +4,16 @@ import { SpotifySearchResponseSchema, toAppTrack, type AppTrack } from './types'
 
 const SEARCH_URL = 'https://api.spotify.com/v1/search'
 
-export const SEARCH_LIMIT_DEFAULT = 20
-export const SEARCH_LIMIT_MAX = 50
+/**
+ * Spotify's search `limit` is documented as accepting up to 50, but this app
+ * gets a 400 "Invalid limit" for anything above 10 -- verified empirically
+ * against the live API, one value at a time. Asking for more fails the whole
+ * search, so the ceiling here is the real one, not the documented one.
+ *
+ * Ten results is plenty for a phone in a moving car anyway.
+ */
+export const SEARCH_LIMIT_MAX = 10
+export const SEARCH_LIMIT_DEFAULT = 10
 
 export type SearchOptions = {
   limit?: number

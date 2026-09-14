@@ -25,13 +25,27 @@ const CHAR_MAP: Readonly<Record<string, string>> = {
 
 const APOSTROPHES = new Set(["'", '’', 'ʼ', '‘', '´', '`', '＇'])
 
-/** One character's contribution to a normalized token; '' means separator. */
+/**
+ * One character's contribution to a normalized token; '' means separator.
+ *
+ * Letters outside ASCII are kept as themselves rather than dropped. Dropping
+ * them left a title like `好き!! - Karaoke Ver` with no words at all, so the
+ * song could never be picked or linked from; keeping them means Japanese,
+ * Korean, Cyrillic and Greek titles can play. Accented Latin still folds to
+ * ASCII through NFKD above, so `Hoppípolla` stays `hoppipolla`.
+ */
 function normalizeChar(ch: string): string {
   const lower = ch.toLowerCase()
   const mapped = CHAR_MAP[lower]
   if (mapped !== undefined) return mapped
-  const decomposed = lower.normalize('NFKD').replace(/\p{M}+/gu, '')
-  return /^[a-z0-9]+$/.test(decomposed) ? decomposed : ''
+  // NFKD then drop combining marks folds accented Latin to ASCII. The NFC
+  // pass afterwards matters for Hangul: NFKD splits a syllable into Jamo
+  // *letters*, which are not marks and so survive, leaving tokens in
+  // decomposed form. Recomposing keeps every token canonical.
+  const folded = lower.normalize('NFKD').replace(/\p{M}+/gu, '')
+  if (/^[a-z0-9]+$/.test(folded)) return folded
+  const recomposed = folded.normalize('NFC')
+  return /^[\p{L}\p{N}]+$/u.test(recomposed) ? recomposed : ''
 }
 
 /**

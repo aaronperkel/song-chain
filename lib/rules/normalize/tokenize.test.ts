@@ -206,6 +206,80 @@ describe('edge cases', () => {
   })
 })
 
+describe('real Spotify titles, from a live search audit', () => {
+  // Every case below came out of an audit of ~450 titles returned by the live
+  // API. The first four are the misses that audit found.
+  const cases: ReadonlyArray<readonly [string, string]> = [
+    // A trailing recording date used to halt the right-to-left walk, leaving
+    // the "Live At The Fillmore" segment in the title.
+    [
+      "(Sittin' On) The Dock of the Bay - Live At The Fillmore, San Francisco, CA - July 2008",
+      'sittin on the dock of the bay',
+    ],
+    ['Layla - Acoustic Live', 'layla'],
+    ['Cruel Summer - Live from TS | The Eras Tour', 'cruel summer'],
+    ["(Sittin' on) The Dock of the Bay - 2020 Remaster", 'sittin on the dock of the bay'],
+    // Leading parentheticals survived the audit intact, in every spelling.
+    ["(I Can't Get No) Satisfaction - Mono", 'i cant get no satisfaction'],
+    ['(I Can\u2019t Get No) Satisfaction', 'i cant get no satisfaction'],
+    [
+      '(I\u2019ve Had) The Time Of My Life - theme from the motion picture "Dirty Dancing"',
+      'ive had the time of my life',
+    ],
+    // Junk in its natural habitat.
+    ['While My Guitar Gently Weeps - Remastered 2009', 'while my guitar gently weeps'],
+    ['All The Stars (with SZA) - From "Black Panther: The Album"', 'all the stars'],
+    ['Dance The Night - From Barbie The Album', 'dance the night'],
+    ['Karaoke Night - karaoke version', 'karaoke night'],
+    ['Satisfaction - Push Push Push - Slowed + Reverb', 'satisfaction push push push'],
+    ['Sweet Child O\u2019 Mine - Tim Simenon 7" Remix', 'sweet child o mine'],
+    ['Enter Sandman - (Piano Lullaby Instrumental Version)', 'enter sandman'],
+    ['Cruel Summer (Taylor\u2019s Version)', 'cruel summer'],
+    ['Money Trees (feat. Jay Rock)', 'money trees'],
+  ]
+  it.each(cases)('%s', (input, expected) => {
+    expect(norm(input).join(' ')).toBe(expected)
+  })
+
+  it('lets leading position win over the junk vocabulary', () => {
+    // The two halves of the heuristic can disagree. Leading position wins,
+    // because a real title is far more likely than metadata in front.
+    expect(norm('(Remastered) The Song').join(' ')).toBe('remastered the song')
+    expect(norm('The Song (Remastered)').join(' ')).toBe('the song')
+  })
+
+  it('keeps a song genuinely titled with a junk word', () => {
+    // These are real titles. Only a bracket or a dash marks metadata, so a
+    // junk-looking word in the primary segment has to survive.
+    expect(norm('Live Wire').join(' ')).toBe('live wire')
+    expect(norm('Bonus Track').join(' ')).toBe('bonus track')
+    expect(norm('Stereo Love').join(' ')).toBe('stereo love')
+    expect(norm('Mixed Emotions').join(' ')).toBe('mixed emotions')
+    expect(norm('Demo Tape').join(' ')).toBe('demo tape')
+  })
+
+  it('does not strip a bare year that is part of the title', () => {
+    expect(norm('1999').join(' ')).toBe('1999')
+    expect(norm('Summer of 69').join(' ')).toBe('summer of 69')
+    expect(norm('Live 1999 Forever').join(' ')).toBe('live 1999 forever')
+  })
+})
+
+describe('non-Latin titles', () => {
+  it('keeps words in scripts that do not fold to ASCII', () => {
+    // The audit turned up `\u597d\u304d!! - Karaoke Ver`, which normalized to nothing at
+    // all: the song could never be picked, and never be linked from.
+    expect(norm('\u597d\u304d!! - Karaoke Ver').join(' ')).toBe('\u597d\u304d')
+    expect(norm('\u041f\u0435\u0441\u043d\u044f \u043e \u0434\u0440\u0443\u0433\u0435 - Remastered').join(' ')).toBe('\u043f\u0435\u0441\u043d\u044f \u043e \u0434\u0440\u0443\u0433\u0435')
+    expect(norm('\uac70\uc9d3\ub9d0 (Lie)').join(' ')).toBe('\uac70\uc9d3\ub9d0 lie')
+  })
+
+  it('still folds accented Latin to ASCII', () => {
+    expect(norm('Hopp\u00edpolla').join(' ')).toBe('hoppipolla')
+    expect(norm('Sm\u00e1sk\u00edfa 1').join(' ')).toBe('smaskifa 1')
+  })
+})
+
 describe('artist tokenization', () => {
   it('splits artist names without junk stripping', () => {
     expect(tokenizeArtist('Simon & Garfunkel').map((t) => t.norm)).toEqual(['simon', 'garfunkel'])

@@ -20,6 +20,7 @@ export function badRequest(error: z.ZodError): NextResponse<ApiErrorBody> {
 
 /** How each Spotify failure should read to a phone in a car. */
 const STATUS_BY_KIND: Record<SpotifyErrorKind, { status: number; message: string }> = {
+  'bad-request': { status: 502, message: 'Spotify rejected the request we sent.' },
   'rate-limited': { status: 429, message: 'Spotify is rate limiting us. Try again in a moment.' },
   unauthorized: { status: 502, message: 'Spotify rejected our credentials.' },
   forbidden: { status: 502, message: 'Spotify refused that request.' },
