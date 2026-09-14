@@ -9,7 +9,7 @@ endless, no lose condition. The chain *is* the queue you are listening to.
 
 ## Status
 
-Steps 1-4 of the build order are done, verified and pushed. The game is playable end to end.
+Steps 1-5 are done, verified and pushed, and production is live. The game is playable end to end.
 
 | Step | What | State |
 | --- | --- | --- |
@@ -18,8 +18,8 @@ Steps 1-4 of the build order are done, verified and pushed. The game is playable
 | 3 | Host PKCE auth + queue write | done — verified with live `POST /v1/me/player/queue` |
 | 4 | Rooms, codes, seats, turns, realtime | done — 290 hermetic + 58 db tests, full HTTP walkthrough |
 | — | Deploy to production | done — live, redirect URI registered |
-| 5 | Runway, settings, host controls, manual mode | **next** |
-| 6 | Polish | not started |
+| 5 | Runway, settings, host controls, manual mode | done — 354 hermetic + 80 db tests |
+| 6 | Polish | **next** |
 
 ## Production
 
@@ -54,20 +54,35 @@ Dev and production share one Supabase database, so the migrations in `supabase/m
 already applied — no separate production migration. Preview deployments get a fresh URL each
 time and so cannot complete Spotify auth; only production works.
 
-## Step 5
+## Step 5 — what was built
 
-- **Runway**: host polls `currently-playing` every ~10s, `visibilitychange`-aware, reconciled
-  against `GET /v1/me/player/queue` roughly every 5th poll. Server advances `played` and
-  broadcasts. Shown on every device: **Queued: 47 min (12 songs)**.
-- **Settings UI**, host-only, for all eight room settings in `lib/rules/settings.ts`
-  (`matchScope`, `artistCooldown`, `stopwords`, `looseForms`, `numerals`, `wordReuse`,
-  `allowRepeatSongs`, `turnTimer`). Applies to subsequent picks only.
-- **Host controls**: skip turn, undo last pick, override a rejection (recorded on the entry),
-  pause, end. Undo copy must stay honest: Spotify has no remove-from-queue API, so the track
-  may still play and the user has to skip it in Spotify.
-- **Manual mode** (non-Premium or no active device): search and validation are unchanged
-  because they use Client Credentials. Render `spotify:track:` deep links, export the chain,
-  optionally write a playlist after incremental `playlist-modify-private` re-auth.
+- **Runway** (`lib/rooms/playback.ts`, `POST /api/rooms/[id]/playback`). The host polls every
+  10s, `visibilitychange`-aware, with the queue endpoint read every 5th poll. `resolvePlayback`
+  is pure and deliberately conservative: it marks an entry played only when playback has
+  demonstrably moved *past* it, and marks nothing at all when it cannot locate the chain.
+  An empty Spotify queue never drains the runway — it reads the same whether the chain finished
+  or the host just opened a fresh device.
+- **Settings UI** (`lib/rooms/settings-schema.ts`, `PATCH /api/rooms/[id]/settings`). One
+  definition drives the Zod schema, the buttons and the copy, with a test asserting every button
+  maps to a value the server accepts. The write merges into the JSON column so one change cannot
+  blank the others.
+  **Seven settings, not eight.** `allowRepeatSongs` is typed as the literal `false` throughout
+  the rules engine, so there is no honest control to offer; Aaron chose to omit it rather than
+  show a switch that cannot move or widen the engine's type. Lifting that pin means changing
+  `lib/rules/types.ts`, gating the `duplicate-song` check in `validate.ts`, and accepting that
+  duplicate detection also catches remasters.
+- **Host controls** (`POST /api/rooms/[id]/host`): skip, undo, pause, resume, end. Undo and
+  override had both been half-built since step 4 and unreachable — `removeLastEntry` had no
+  caller and the picks route accepted `override: true` that no client ever sent. Ending is
+  final and asks first.
+- **Manual mode**: chain entries deep-link to Spotify (`open.spotify.com`, not the bare
+  `spotify:` URI, which silently does nothing on a phone without the app), a text export that
+  carries the linking words, and a playlist write behind incremental `playlist-modify-private`
+  consent via `/api/auth/spotify/login?scopes=playlist`. Chunks are sent **in sequence**: the
+  order is the game, and parallel chunks would shuffle it.
+
+Verified against production with a real room: settings merge and reject bad input, host actions
+are 403 without the cookie, pause blocks picks with 409, end clears the turn and is final.
 
 ## Step 6
 
@@ -95,8 +110,8 @@ These come from Aaron's brief and are load-bearing, not preferences.
 ## Verify
 
 ```
-npm test          # 290 hermetic tests — no network, no database, no credentials
-npm run test:db   # 58 tests against the real Supabase database
+npm test          # 354 hermetic tests — no network, no database, no credentials
+npm run test:db   # 80 tests against the real Supabase database
 npm run typecheck
 npm run lint      # run it bare; piping into `tail` inside an && chain has hidden a real failure
 npm run build     # not while `next dev` is running (see iCloud below)
@@ -135,6 +150,12 @@ npm run build     # not while `next dev` is running (see iCloud below)
   not a bug.
 - **RLS plus revoked grants** are two independent barriers on every table, because Supabase
   grants `anon` full DML on new tables by default. Any new migration must revoke too.
+- **A tsconfig `exclude` glob cannot use a character class.** tsconfig globs support only `*`,
+  `?` and `**/`, so `"**/* [0-9].ts"` matched literally and excluded nothing — the iCloud
+  conflict copies it was written for were breaking `typecheck` for months. It is `"**/* ?.ts"`
+  now. Verified with the conflict files on disk: `[0-9]` fails, `?` passes.
+- `.gitignore` needs its own pattern for the conflict copies: `/.next/` does not match
+  `.next 2/`, so one turns up as untracked after a synced build.
 - `next dev` rewrites `AGENTS.md` — put durable instructions here in `CLAUDE.md` instead.
 
 ## Commits
