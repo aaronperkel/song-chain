@@ -11,6 +11,9 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noEmit": true,
+    // Node strips types natively and requires the explicit .ts extension on
+    // relative imports, which the scripts/ runners use.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
