@@ -8,7 +8,17 @@ export { searchTracks, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX } from './search'
 export { SpotifyError, isSpotifyError, readJson, toSpotifyError } from './errors'
 export { hasSpotifyCredentials, spotifyCredentials } from './env'
 export { toAppTrack } from './types'
+export {
+  exchangeCode,
+  fetchHostProfile,
+  getHostAccessToken,
+  queueTrack,
+  resetHostRefreshCache,
+} from './host'
+export { authorizeUrl, createPkcePair, createState, redirectUri, HOST_SCOPES } from './pkce'
 
 export type { SpotifyErrorKind } from './errors'
 export type { AppTrack, SpotifyTrack, SpotifyTokenResponse } from './types'
 export type { SearchOptions } from './search'
+export type { HostProfile, HostTokens } from './host'
+export type { PkcePair } from './pkce'
