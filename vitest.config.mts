@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['lib/**/*.test.ts', 'app/**/*.test.ts'],
+    // Database-backed tests live in *.db.test.ts and run under
+    // vitest.db.config.mts. `npm test` stays hermetic: no network, no
+    // database, no credentials.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/*.db.test.ts'],
     coverage: {
       provider: 'v8',
       include: ['lib/rules/**/*.ts'],
