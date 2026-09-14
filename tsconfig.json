@@ -32,5 +32,16 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    // iCloud conflict copies. This project lives under ~/Documents, which is
+    // iCloud-synced, so concurrent writes to .next (a dev server and a build
+    // at once) leave behind duplicates named "routes.d 2.ts". They are picked
+    // up by the .next/types include above and break typecheck with duplicate
+    // identifiers. Excluding the pattern is cheaper than a clean step that
+    // races the sync.
+    "**/* [0-9].ts",
+    "**/* [0-9].tsx",
+    "**/* [0-9].d.ts"
+  ]
 }

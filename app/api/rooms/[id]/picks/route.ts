@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { badRequest, spotifyErrorResponse } from '@/lib/api/respond'
 import { isHostOf } from '@/lib/host/session'
 import { currentSeatId } from '@/lib/player/session'
+import { findEntryByNonce } from '@/lib/rooms/chain'
 import { findRoomById } from '@/lib/rooms/repo'
 import { submitPick } from '@/lib/rooms/submit'
 import { readTurn } from '@/lib/rooms/turns'
@@ -62,6 +63,25 @@ export async function POST(
       { error: 'room-paused', message: 'The host has paused the game.' },
       { status: 409 },
     )
+  }
+
+  /**
+   * A replay is answered from the chain before anything else is judged.
+   *
+   * This has to come ahead of the turn check, not after it. When a submit
+   * succeeds but its response is lost to bad signal, the turn has already
+   * moved on -- so re-judging the retry rejects it as out of turn, which is
+   * the one case the whole idempotency design exists to survive. The pick is
+   * history by then; the only correct answer is the entry it created.
+   */
+  const alreadyApplied = await findEntryByNonce(id, parsed.data.nonce)
+  if (alreadyApplied !== null) {
+    return NextResponse.json({
+      entry: alreadyApplied,
+      turn: (await readTurn(id)) ?? { currentSeatId: null, turnStartedAt: null },
+      wasDuplicate: true,
+      queueWarning: null,
+    })
   }
 
   const [seatId, isHost] = await Promise.all([currentSeatId(id), isHostOf(id)])

@@ -1,0 +1,55 @@
+import Link from 'next/link'
+import { JoinPanel } from '@/components/join-panel'
+import { appOrigin } from '@/lib/api/origin'
+import { buildRoomState } from '@/lib/api/room-state'
+import { currentHostRoomId } from '@/lib/host/session'
+import { currentSeatId } from '@/lib/player/session'
+import { findRoomById } from '@/lib/rooms/repo'
+import { HostView } from './host-view'
+import { headers } from 'next/headers'
+import { StartGame } from './start-game'
+
+export const metadata = { title: 'Hosting — Song Chain' }
+
+/**
+ * The host screen recovers its room from the host cookie, so a reload, a
+ * locked phone or the round trip through Spotify all come back to the same
+ * game rather than starting a new one.
+ */
+export default async function HostPage(): Promise<React.JSX.Element> {
+  const roomId = await currentHostRoomId()
+
+  if (roomId === null) return <StartGame />
+
+  const room = await findRoomById(roomId)
+  if (room === null) return <StartGame />
+
+  const [seatId, state] = await Promise.all([
+    currentSeatId(roomId),
+    buildRoomState(roomId, { seatId: null, isHost: true }),
+  ])
+  if (state === null) return <StartGame />
+
+  const withSeat = { ...state, you: { ...state.you, seatId } }
+
+  // Built here so the QR is rendered on the server, and so the join link
+  // matches the origin this phone actually used.
+  const headerList = await headers()
+  const origin = appOrigin(
+    new Request('http://placeholder.invalid', { headers: headerList }),
+  )
+  const joinUrl = `${origin}/join?code=${room.code}`
+
+  return (
+    <>
+      <HostView initial={withSeat} joinPanel={<JoinPanel code={room.code} joinUrl={joinUrl} />} />
+      {state.chain.length > 0 ? (
+        <footer className="mx-auto w-full max-w-lg px-4 pb-8">
+          <Link href={`/room/${room.code}`} className="text-paint-dim text-base underline">
+            Open the player view for this phone
+          </Link>
+        </footer>
+      ) : null}
+    </>
+  )
+}
