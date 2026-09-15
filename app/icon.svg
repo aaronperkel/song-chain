@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Song Chain">
+  <!--
+    Road centre-line at dusk, receding toward a vanishing point above the
+    frame. The dashes are the chain: separate marks, one after another, going
+    somewhere. Sodium on dusk, the same two colours as the interface.
+
+    This file is the only drawn source. Every PNG in public/ and the favicon
+    are rasterised from it; see "Icons" in CLAUDE.md.
+  -->
+  <rect width="512" height="512" fill="#10202b"/>
+  <g fill="#f0a83c">
+    <polygon points="233.3,73 278.7,73 285.9,136.4 226.1,136.4"/>
+    <polygon points="221.2,180.4 290.8,180.4 300.4,265.8 211.6,265.8"/>
+    <polygon points="205,324.3 307,324.3 319.8,439 192.2,439"/>
+  </g>
+</svg>

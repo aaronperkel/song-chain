@@ -20,7 +20,7 @@ Steps 1-5 are done, verified and pushed, and production is live. The game is pla
 | — | Deploy to production | done — live, redirect URI registered |
 | 5 | Runway, settings, host controls, manual mode | done — 354 hermetic + 80 db tests |
 | — | Everyone in the car plays: the host, and the driver | done — 375 hermetic + 92 db tests |
-| 6 | Polish | **next** |
+| 6 | Polish: installable, screen stays awake | done — 385 hermetic + 92 db tests |
 
 ## Production
 
@@ -119,11 +119,51 @@ worse than no search.
 tested — the questions they answer are the ones people argue about in a car, so they
 are tests rather than things you find out by driving somewhere.
 
-## Step 6
+## Step 6 — what was built
 
-Mobile-first pass (44px+ targets, one-handed), PWA manifest, `navigator.wakeLock` on the host
-screen — note it is secure-context only, so it will work in production and not over LAN http.
-`prefers-reduced-motion`.
+Half of this step turned out to be already done, and finding that out was most of the work.
+The **44px tap targets** were never a per-component job: `app/globals.css` puts a 3rem floor
+on every `button`, `a[role=button]`, `input` and `select`, so the guest screens were covered
+by the rule rather than by the `min-h-[44px]` classes the host components happen to carry.
+**`prefers-reduced-motion`** was already there too, and there is only one animation for it to
+answer (`turn-arrives`). Neither needed touching.
+
+- **Installable** (`app/manifest.ts`). Standalone, portrait, dusk background so the splash and
+  the first paint are the same colour rather than a white flash in a dark car. iOS ignores the
+  manifest's `display`, so `metadata.appleWebApp` in `app/layout.tsx` carries it there — without
+  that, an installed app still opens inside Safari with the address bar on the screen that has
+  the least room to spare. `statusBarStyle` is `default`, not `black-translucent`: translucent
+  runs the page under the status bar, and the top of the host screen is the runway.
+- **Wake lock** (`lib/host/use-wake-lock.ts`, host screen only). The host phone is the only one
+  with a job to do while nobody is touching it — it polls Spotify so the runway moves — and a
+  phone that sleeps stops polling. The browser drops the lock itself when the page hides, so the
+  hook re-acquires on `visibilitychange`, the same event `use-playback-poll` already watches.
+  Released when the room ends. Guests do not get one: a guest phone sleeping between turns is
+  correct, and their battery has to last the trip too.
+  It returns nothing and shows nothing. A lock that cannot be taken costs the game nothing, and
+  the poll it would have protected already reports itself as stalled.
+
+### Icons
+
+`app/icon.svg` is the only drawn source — a road centre-line at dusk, receding, the dashes
+standing in for the chain. Every raster comes from it: `public/icon-192.png`, `public/icon-512.png`,
+`app/apple-icon.png` (180px, iOS reads this and not the manifest) and `app/favicon.ico`. To
+regenerate after editing the SVG, from the repo root:
+
+```
+node --input-type=module -e 'import sharp from "sharp";import {readFileSync} from "node:fs";
+const svg=readFileSync("app/icon.svg");
+for (const [p,s] of [["public/icon-512.png",512],["public/icon-192.png",192],["app/apple-icon.png",180]])
+  await sharp(svg,{density:600}).resize(s,s).png({compressionLevel:9}).toFile(p)'
+```
+
+`sharp` is a transitive dependency of Next and ImageMagick (`magick`) built the `.ico` from
+16px and 32px renders — both are fine for a one-off that produces committed files, and neither
+is a build dependency. The mark sits inside the central 80% of the square, so one file serves
+both the plain and the maskable purpose.
+
+The Next.js starter SVGs (`next.svg`, `vercel.svg`, `file.svg`, `globe.svg`, `window.svg`) were
+deleted; nothing referenced them.
 
 ## Architecture constraints — do not deviate without flagging
 
@@ -145,7 +185,7 @@ These come from Aaron's brief and are load-bearing, not preferences.
 ## Verify
 
 ```
-npm test          # 354 hermetic tests — no network, no database, no credentials
+npm test          # 385 hermetic tests — no network, no database, no credentials
 npm run test:db   # 80 tests against the real Supabase database
 npm run typecheck
 npm run lint      # run it bare; piping into `tail` inside an && chain has hidden a real failure

@@ -22,6 +22,16 @@ const barlowCondensed = Barlow_Condensed({
 export const metadata: Metadata = {
   title: "Song Chain",
   description: "A car-trip word game played through Spotify.",
+  // iOS ignores the manifest's `display` and reads these instead, so without
+  // them a phone that installed the app still opens it inside Safari --
+  // address bar and all, on the screen with the least room to spare.
+  appleWebApp: {
+    title: "Song Chain",
+    // Not `black-translucent`: that runs the page under the status bar, and
+    // the top of the host screen is the runway, which nobody should have to
+    // read around a clock.
+    statusBarStyle: "default",
+  },
 };
 
 export const viewport: Viewport = {

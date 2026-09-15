@@ -8,6 +8,7 @@ import type { RoomState } from '@/lib/api/room-state'
 import { useSubmit } from '@/lib/player/use-submit'
 import { useRoom } from '@/lib/realtime/use-room'
 import { usePlaybackPoll } from '@/lib/host/use-playback-poll'
+import { useWakeLock } from '@/lib/host/use-wake-lock'
 import { toRulesHistory } from '@/lib/rooms/entry'
 import { turnView } from '@/lib/rooms/whose-turn'
 import type { AppTrack } from '@/lib/spotify'
@@ -50,6 +51,11 @@ export function HostView({
     enabled: state.room.hostConnected && state.room.mode === 'live',
     onAdvance: refresh,
   })
+
+  // This phone is the one propped on the dash with a job to do while nobody
+  // is touching it. Released once the game is over, so an ended room does not
+  // sit there burning the host's battery for the rest of the drive.
+  useWakeLock(state.room.status !== 'ended')
 
   const history = useMemo(() => toRulesHistory(state.chain), [state.chain])
   const needsSeed = state.chain.length === 0
